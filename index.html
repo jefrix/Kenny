@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kenny</title>
+<meta name="description" content="Kenny. Home of Robot Arena, where you build and program robots that fight on their own.">
+<link rel="stylesheet" href="arena/fonts/fonts.css">
+<script type="importmap">{ "imports": { "three": "./arena/vendor/three.module.min.js", "three/addons/OrbitControls.js": "./arena/vendor/OrbitControls.js" } }</script>
+<style>
+  :root { --cobalt: #1e3bb3; --deep: #0f1c63; --yellow: #ffc914; --red: #e5352b; --ink: #101a3f; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--cobalt); color: #fff; overflow-x: hidden; font-family: 'Barlow Semi Condensed', 'Arial Narrow', sans-serif; }
+  main { position: relative; min-height: 100%; display: grid; grid-template-rows: minmax(0, 1fr) auto auto; align-content: center; justify-items: center; padding: 16px; overflow: hidden; }
+  /* A floor of toy-baseplate studs, receding in rows. */
+  main::before { content: ''; position: absolute; inset: 0; background-image: radial-gradient(circle at 50% 42%, rgba(255,255,255,.1) 0 34%, rgba(0,0,0,.14) 36% 45%, transparent 47%); background-size: 46px 46px; }
+  h1 { position: relative; grid-row: 2; margin: 0; font: 400 clamp(92px, 27vw, 410px)/.86 'Bungee', 'Arial Black', sans-serif; color: var(--yellow); letter-spacing: -.01em; text-shadow: .018em .018em 0 var(--ink), .036em .036em 0 var(--ink), .054em .054em 0 var(--red), .072em .072em 0 var(--red); }
+  .bot { position: relative; grid-row: 1; align-self: end; width: min(44vh, 80vw, 430px); aspect-ratio: 1; margin-bottom: -5%; pointer-events: none; z-index: 1; }
+  .bot canvas { width: 100%; height: 100%; display: block; }
+  .go { position: relative; grid-row: 3; align-self: start; text-align: center; padding-bottom: 28px; display: grid; gap: 14px; justify-items: center; z-index: 2; padding-top: 34px; }
+  .launch { display: inline-block; background: var(--red); color: #fff; font: 400 clamp(21px, 3.4vw, 33px)/1 'Bungee', 'Arial Black', sans-serif; padding: .72em 1.15em; border: 4px solid var(--ink); border-radius: 12px; box-shadow: 0 9px 0 var(--ink); text-decoration: none; transition: transform .07s, box-shadow .07s, background .1s; }
+  .launch:hover { background: #f4483e; }
+  .launch:active { transform: translateY(9px); box-shadow: 0 0 0 var(--ink); }
+  .launch:focus-visible { outline: 4px solid var(--yellow); outline-offset: 4px; }
+  .go p { margin: 0; font-size: clamp(17px, 2.2vw, 21px); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Kenny</h1>
+  <div class="bot" aria-hidden="true"><canvas id="bot"></canvas></div>
+  <div class="go">
+    <a class="launch" href="arena/index.html">Launch Robot Arena</a>
+    <p>Build a robot. Program it with blocks. Watch it fight on its own.</p>
+  </div>
+</main>
+<script type="module">
+  // A different stock robot stands on the title each visit. If 3D is unavailable, the page still works.
+  try {
+    const [{ Turntable }, { PRESETS }] = await Promise.all([import('./arena/js/render.js'), import('./arena/js/presets.js')]);
+    const pool = PRESETS.filter((p) => !p.dummy), pick = pool[Math.floor(Math.random() * pool.length)];
+    const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const t = new Turntable(document.getElementById('bot'), { spin: 0.45 });
+    t.setRobot(pick.design, pick.color);
+    if (!still) { let last = performance.now(); const loop = (n) => { t.tick(Math.min(0.05, (n - last) / 1000)); last = n; requestAnimationFrame(loop); }; requestAnimationFrame(loop); }
+  } catch { document.querySelector('.bot')?.remove(); }
+</script>
+</body>
+</html>
