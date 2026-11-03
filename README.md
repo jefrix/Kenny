@@ -12,7 +12,7 @@ Open `index.html` through any static web server, or publish the repo with GitHub
 
 **Sense.** A robot knows only what falls inside its radar's range and cone. Walls and smoke block radar, and a target's position goes stale once it is out of view.
 
-**Fight.** Up to 8 robots, free for all or in teams, across 5 arenas with lava, mud, pits, spikes, breakable crates, explosive barrels and repair pads. After two minutes, the walls close in.
+**Fight.** Up to 8 robots, free for all or in teams, across 5 arenas with lava, mud, pits, spikes, breakable crates, explosive barrels and repair pads. Robots start at random spots facing random directions, so the same matchup plays out differently each time. After two minutes, the walls close in.
 
 ## Sharing robots
 

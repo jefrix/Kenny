@@ -27,6 +27,23 @@ assert.throws(() => sanitizeBot({ ...PRESETS[0], design: { ...PRESETS[0].design,
 const a = run([fighters[0], fighters[1]], 'foundry', 7), b = run([fighters[0], fighters[1]], 'foundry', 7);
 assert.equal(a.time, b.time); assert.equal(a.bots[0].hp, b.bots[0].hp);
 
+// Starting spots vary by seed, and are always safe and spaced apart, even with a full arena.
+const eight = [...fighters, fighters[0]];
+for (const id of Object.keys(ARENAS)) {
+  const starts = new Set();
+  for (let seed = 1; seed <= 40; seed++) {
+    const m = new Battle(eight.map((bot) => ({ bot })), id, seed);
+    starts.add(`${m.bots[0].x},${m.bots[0].h}`);
+    m.bots.forEach((r, i) => {
+      assert.ok(m.clearSpot(r.x, r.y, r.stats.radius), `${r.name} starts somewhere unsafe in ${id}`);
+      for (const o of m.bots.slice(i + 1)) assert.ok(Math.hypot(o.x - r.x, o.y - r.y) > r.stats.radius + o.stats.radius + 4, `robots start too close in ${id}`);
+    });
+  }
+  assert.equal(starts.size, 40, `${id} starts should differ between battles`);
+  const same = new Battle(eight.map((bot) => ({ bot })), id, 9), again = new Battle(eight.map((bot) => ({ bot })), id, 9);
+  assert.equal(same.bots[3].x, again.bots[3].x);
+}
+
 // Each weapon, module and drive runs through a match without throwing.
 const shooter = (over) => ({ name: 'T', color: '#ffffff', design: { chassis: 'fortress', drive: 'legs', engine: 'battery', armor: 'none', radar: 'omni', turret: 'fast', cpu: 'abacus', weapons: ['mg'], modules: [], ...over },
   program: [{ op: 'aim', mode: 'at target' }, { op: 'face', how: 'toward', what: 'target' }, { op: 'drive', dir: 'forward', pct: 100 }, { op: 'fire', w: 'all' }, { op: 'module', m: 'boost' }, { op: 'module', m: 'jump jets' }, { op: 'module', m: 'smoke' }, { op: 'toggle', m: 'shield', on: 'on' }, { op: 'toggle', m: 'cloak', on: 'off' }] });

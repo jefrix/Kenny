@@ -42,17 +42,47 @@ export class Battle {
     this.events = []; this.shots = []; this.mines = []; this.clouds = [];
     this.ringR = SIZE; // Half-width of the safe square once sudden death starts.
     this.solidsChanged = false;
-    const n = entries.length;
-    this.bots = entries.map((e, i) => this.spawn(e, i, n));
+    this.bots = [];
+    entries.forEach((e, i) => this.bots.push(this.spawn(e, i)));
   }
 
-  spawn({ bot, team }, i, n) {
-    const a = (i / n) * TAU + Math.PI * 0.25, s = computeStats(bot.design);
-    let x = 50 + Math.cos(a) * 40, y = 50 + Math.sin(a) * 40;
+  /** Can a robot of radius r safely start here? Avoids solids, deadly floors and the arena edge. */
+  clearSpot(x, y, r) {
+    const gap = r + 2;
+    if (x < gap || y < gap || x > SIZE - gap || y > SIZE - gap) return false;
+    for (const s of this.arena.solids) {
+      const d = s.w !== undefined
+        ? Math.hypot(x - clamp(x, s.x, s.x + s.w), y - clamp(y, s.y, s.y + s.h))
+        : Math.hypot(x - s.cx, y - s.cy) - s.r;
+      if (d < gap) return false;
+    }
+    for (const z of this.arena.zones) {
+      if (z.t !== 'pit' && z.t !== 'lava' && z.t !== 'spikes') continue;
+      if (x > z.x - gap && x < z.x + z.w + gap && y > z.y - gap && y < z.y + z.h + gap) return false;
+    }
+    return true;
+  }
+
+  /** Random clear spot, as far from other robots as the arena allows. The spacing relaxes if it is crowded. */
+  randomSpot(r) {
+    let spacing = 40, x = 50, y = 50;
+    for (let tries = 1; tries <= 2000; tries++) {
+      const cx = r + this.rand() * (SIZE - 2 * r), cy = r + this.rand() * (SIZE - 2 * r);
+      if (this.clearSpot(cx, cy, r)) {
+        x = cx; y = cy;
+        if (this.bots.every((o) => Math.hypot(o.x - cx, o.y - cy) >= spacing + o.stats.radius + r)) break;
+      }
+      if (tries % 40 === 0) spacing *= 0.8;
+    }
+    return { x, y };
+  }
+
+  spawn({ bot, team }, i) {
+    const s = computeStats(bot.design), { x, y } = this.randomSpot(s.radius), a = this.rand() * TAU;
     const d = bot.design;
     const b = {
       id: i, name: bot.name, color: bot.color, design: d, program: bot.program, stats: s,
-      team: team ?? i, x, y, z: 0, vx: 0, vy: 0, h: norm(a + Math.PI), turretA: 0, radarA: 0,
+      team: team ?? i, x, y, z: 0, vx: 0, vy: 0, h: norm(a), turretA: 0, radarA: 0,
       hp: s.hp, energy: s.energy, alive: true, deathTime: 0,
       throttle: 0, steer: 0, strafeDir: 0, faceTarget: null, radarMode: 'sweep', aimMode: 'dead ahead', aimDeg: 0, radarDir: 1,
       firing: [false, false, false],
