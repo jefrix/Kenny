@@ -7,9 +7,12 @@ import { N, BUILDINGS, MAX_HEIGHT } from './sim.js';
 
 export const TEAM_COLORS = ['#3f7cf0', '#e0432f'];
 const SKY_HORIZON = 0xf3d9b4, SKY_TOP = 0x3f76b8;
-const MODEL_NAMES = ['hut', 'house', 'site', 'rubble', 'temple', 'cedar', 'palm', 'rock', 'cloud', 'villager', 'warrior', 'standard', 'hand_open', 'hand_grab'];
+const MODEL_NAMES = ['hut', 'hut_reed', 'house', 'farm', 'mine', 'forge', 'school', 'tower', 'site', 'rubble', 'temple', 'temple_stone', 'temple_copper', 'temple_iron', 'warrior_stone', 'warrior_copper', 'warrior_iron', 'tool_axe', 'tool_hoe', 'tool_pick', 'tool_hammer', 'tool_tablet', 'tool_staff', 'cedar', 'palm', 'rock', 'cloud', 'villager', 'warrior', 'standard', 'hand_open', 'hand_grab'];
 const lin = (hex) => new THREE.Color(hex);
 const TEAM = TEAM_COLORS.map(lin);
+const AGE_METAL = [0x8a8476, 0xd07a3c, 0xc09238, 0x7d858e].map(lin); // The metal of each age, used to tint tools.
+const WARRIOR_BY_GEAR = ['warrior_stone', 'warrior_copper', 'warrior', 'warrior_iron'], TEMPLE_BY_AGE = ['temple_stone', 'temple_copper', 'temple', 'temple_iron'];
+const TOOL_BY_JOB = { priest: 'tool_staff', farmer: 'tool_hoe', woodcutter: 'tool_axe', builder: 'tool_hammer', miner: 'tool_pick', smith: 'tool_hammer', scribe: 'tool_tablet' };
 
 // ----- Models: every GLB becomes one merged geometry, plus a second for parts tinted by tribe. -----
 
@@ -179,7 +182,10 @@ export class GodRenderer {
   async load(base = 'models') {
     const m = this.models = await loadModels(base), s = this.scene, mat = this.material;
     this.batches = {
-      villager: new Batch(s, m.villager, 240, mat), warrior: new Batch(s, m.warrior, 240, mat), hut: new Batch(s, m.hut, 90, mat), house: new Batch(s, m.house, 70, mat),
+      villager: new Batch(s, m.villager, 240, mat), warrior: new Batch(s, m.warrior, 240, mat), warrior_stone: new Batch(s, m.warrior_stone, 240, mat), warrior_copper: new Batch(s, m.warrior_copper, 240, mat), warrior_iron: new Batch(s, m.warrior_iron, 240, mat),
+      tool_axe: new Batch(s, m.tool_axe, 120, mat, false), tool_hoe: new Batch(s, m.tool_hoe, 120, mat, false), tool_pick: new Batch(s, m.tool_pick, 120, mat, false), tool_hammer: new Batch(s, m.tool_hammer, 120, mat, false), tool_tablet: new Batch(s, m.tool_tablet, 120, mat, false), tool_staff: new Batch(s, m.tool_staff, 240, mat, false),
+      farm: new Batch(s, m.farm, 24, mat), mine: new Batch(s, m.mine, 16, mat), forge: new Batch(s, m.forge, 16, mat), school: new Batch(s, m.school, 16, mat), tower: new Batch(s, m.tower, 12, mat), hut_reed: new Batch(s, m.hut_reed, 90, mat),
+      temple_stone: new Batch(s, m.temple_stone, 2, mat), temple_copper: new Batch(s, m.temple_copper, 2, mat), temple_iron: new Batch(s, m.temple_iron, 2, mat), hut: new Batch(s, m.hut, 90, mat), house: new Batch(s, m.house, 70, mat),
       site: new Batch(s, m.site, 40, mat), temple: new Batch(s, m.temple, 2, mat), cedar: new Batch(s, m.cedar, 280, mat), palm: new Batch(s, m.palm, 280, mat),
       rock: new Batch(s, m.rock, 60, mat), standard: new Batch(s, m.standard, 2, mat), rubble: new Batch(s, m.rubble, 60, mat), cloud: new Batch(s, m.cloud, 8, new THREE.MeshLambertMaterial({ vertexColors: true, transparent: true, opacity: 0.72 }), false),
     };
@@ -449,6 +455,12 @@ export class GodRenderer {
       case 'offering': this.ringBurst(e.x, e.y, 2, 0xffd76a, 0.7); break;
       case 'hit': this.glow.emit(e.x, g + 0.5, e.y, { vy: 1, vx: spread(2), vz: spread(2), life: 0.22, size: 0.25, color: white }); break;
       case 'standard': this.ringBurst(e.x, e.y, 2, TEAM_COLORS[e.tribe], 0.7); break;
+      case 'age':
+        this.flash = Math.max(this.flash, 0.5); this.ringBurst(e.x, e.y, 14, 0xffd76a, 1.6); this.ringBurst(e.x, e.y, 8, 0xffffff, 1.1);
+        for (let i = 0; i < 160; i++) { const a = rnd() * 6.28, r = 3 + rnd() * 5; this.glow.emit(e.x + Math.cos(a) * r, g + rnd() * 2, e.y + Math.sin(a) * r, { vy: 2 + rnd() * 5, life: 1.2 + rnd() * 1.8, size: 0.34, color: gold }); }
+        break;
+      case 'promote': if (e.rank === 2) this.ringBurst(e.x, e.y, 1.3, 0xffd76a, 0.7); for (let i = 0; i < (e.rank === 2 ? 14 : 5); i++) this.glow.emit(e.x, g + 0.6, e.y, { vy: 1.5 + rnd() * 1.5, vx: spread(1.2), vz: spread(1.2), life: 0.9, size: 0.17, color: gold }); break;
+      case 'arrow': { const fy = this.groundY(e.fromX, e.fromY) + 3.1; for (let i = 0; i <= 9; i++) { const k = i / 9; this.glow.emit(e.fromX + (e.x - e.fromX) * k, fy + (g + 0.6 - fy) * k + Math.sin(k * 3.14) * 0.7, e.fromY + (e.y - e.fromY) * k, { life: 0.18 + k * 0.1, size: 0.1, color: white, alpha: 0.75 }); } break; }
       case 'over': this.flash = Math.max(this.flash, 0.5); break;
       default: break;
     }
@@ -511,10 +523,12 @@ export class GodRenderer {
       if (tr.standard) { const s = tr.standard; b.standard.add(s.x, w.heightAt(s.x, s.y), s.y, Math.sin(t * 1.5) * 0.08, 1, 1, 0, 0, null, TEAM[tr.id]); }
     }
     for (const bu of w.buildings) {
-      const g = w.heightAt(bu.x, bu.y) - 0.03, batch = b[bu.type], team = TEAM[bu.tribe];
+      const g = w.heightAt(bu.x, bu.y) - 0.03, team = TEAM[bu.tribe], age = w.tribes[bu.tribe].age;
+      const batch = bu.type === 'temple' ? b[TEMPLE_BY_AGE[age]] : bu.type === 'hut' && age === 0 ? b.hut_reed : b[bu.type];
       if (bu.progress >= 1) batch.add(bu.x, g, bu.y, bu.turn, 1, 1, 0, 0, null, team);
-      else { b.site.add(bu.x, g, bu.y, bu.turn, bu.type === 'house' ? 1.4 : 1); batch.add(bu.x, g, bu.y, bu.turn, 0.96, Math.max(0.04, bu.progress), 0, 0, null, team); }
+      else { b.site.add(bu.x, g, bu.y, bu.turn, BUILDINGS[bu.type].radius / 1.5); batch.add(bu.x, g, bu.y, bu.turn, 0.96, Math.max(0.04, bu.progress), 0, 0, null, team); }
       if (!moving) continue;
+      if (bu.type === 'forge' && bu.progress >= 1 && rnd() < dt * 5) { const c = Math.cos(bu.turn), s = Math.sin(bu.turn), lx = 0.75, lz = -0.75; this.smoke.emit(bu.x + lx * c + lz * s, g + 2.5, bu.y - lx * s + lz * c, { vy: 1.3, vx: 0.2, life: 2.2, size: 0.45, grow: 0.7, color: lin(0x3a342e), alpha: 0.45 }); if (rnd() < 0.3) this.glow.emit(bu.x + lx * c + lz * s, g + 2.4, bu.y - lx * s + lz * c, { vy: 2, life: 0.6, size: 0.14, color: lin(0xff9a2e) }); }
       const def = BUILDINGS[bu.type], damaged = 1 - bu.hp / def.hp;
       if (bu.burn > 0 || damaged > 0.45) {
         const s = def.radius;
@@ -530,9 +544,11 @@ export class GodRenderer {
       const k = Math.min(1, dt * 12); s.x += (p.x - s.x) * k; s.y += (p.y - s.y) * k;
       let dh = p.heading - s.heading; while (dh > Math.PI) dh -= Math.PI * 2; while (dh < -Math.PI) dh += Math.PI * 2; s.heading += dh * Math.min(1, dt * 9);
       if (p === this.watched) continue; // You cannot see your own head from the inside.
-      const batch = p.role === 'warrior' ? b.warrior : b.villager, team = TEAM[p.tribe], phase = t * 10 + p.seed;
-      if (p.state === 'carried') { const tip = this.handTip; if (tip) { s.x = tip.x; s.y = tip.z; batch.add(tip.x, tip.y - 0.9, tip.z, t * 1.4, 1.7, 1.7, Math.sin(t * 5) * 0.3, Math.cos(t * 4) * 0.3, null, team); } continue; }
-      if (p.state === 'air') { s.x = p.x; s.y = p.y; batch.add(p.x, p.z, p.y, t * 9 + p.seed, 1.7, 1.7, t * 7, t * 5, null, team); continue; }
+      const batch = p.role === 'warrior' ? b[WARRIOR_BY_GEAR[p.gear]] : b.villager, team = TEAM[p.tribe], phase = t * 10 + p.seed;
+      const tool = p.role === 'warrior' ? null : b[TOOL_BY_JOB[p.profession]], metal = AGE_METAL[w.tribes[p.tribe].age];
+      const draw = (x, y, z, yaw, pitch, roll) => { batch.add(x, y, z, yaw, 1.7, 1.7, pitch, roll, null, team); if (tool) tool.add(x, y, z, yaw, 1.7, 1.7, pitch, roll, null, metal); };
+      if (p.state === 'carried') { const tip = this.handTip; if (tip) { s.x = tip.x; s.y = tip.z; draw(tip.x, tip.y - 0.9, tip.z, t * 1.4, Math.sin(t * 5) * 0.3, Math.cos(t * 4) * 0.3); } continue; }
+      if (p.state === 'air') { s.x = p.x; s.y = p.y; draw(p.x, p.z, p.y, t * 9 + p.seed, t * 7, t * 5); continue; }
       let y = w.heightAt(s.x, s.y), pitch = 0, roll = 0;
       if (p.state === 'swim') { y = w.sea - 0.42; roll = Math.sin(phase) * 0.22; }
       else if (p.moving) { y += Math.abs(Math.sin(phase)) * 0.09; roll = Math.sin(phase) * 0.09; }
@@ -540,7 +556,7 @@ export class GodRenderer {
       else if (p.state === 'work') { pitch = 0.2 + Math.sin(phase * 0.75) * 0.34; }
       else if (p.state === 'fight') { pitch = 0.12 + Math.max(0, Math.sin(phase * 0.8)) * 0.52; }
       if (p.blessUntil > w.time && moving && rnd() < dt * 3) this.glow.emit(s.x, y + 0.5, s.y, { vy: 1.1, life: 0.8, size: 0.16, color: lin(0xffd76a) });
-      batch.add(s.x, y, s.y, s.heading, 1.7, 1.7, pitch, roll, null, team);
+      draw(s.x, y, s.y, s.heading, pitch, roll);
     }
 
     this.updateHand(dt);

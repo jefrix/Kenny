@@ -2,9 +2,9 @@
 import { N, MIRACLES, BUILDINGS, TEMPLE_GUARD } from './sim.js';
 
 export const DIFFICULTIES = {
-  novice: { name: 'Minor Spirit', blurb: 'Slow to anger. Learn the land.', interval: 3.2, strokeRate: 2, marchWarriors: 13, marchAfter: 480, aggression: 0.3, beliefMult: 1 },
-  jealous: { name: 'Jealous God', blurb: 'Comes for you by mid-match.', interval: 1.8, strokeRate: 4, marchWarriors: 10, marchAfter: 300, aggression: 0.65, beliefMult: 1 },
-  wrathful: { name: 'Wrathful God', blurb: 'Early, relentless, and unfair: extra prayer.', interval: 1, strokeRate: 7, marchWarriors: 7, marchAfter: 170, aggression: 1, beliefMult: 1.2 },
+  novice: { name: 'Minor Spirit', blurb: 'Slow to anger. Learn the land.', interval: 3.2, strokeRate: 2, marchWarriors: 14, marchAfter: 900, aggression: 0.3, beliefMult: 1 },
+  jealous: { name: 'Jealous God', blurb: 'Comes for you by mid-match.', interval: 1.8, strokeRate: 4, marchWarriors: 11, marchAfter: 600, aggression: 0.65, beliefMult: 1 },
+  wrathful: { name: 'Wrathful God', blurb: 'Early, relentless, and unfair: extra prayer.', interval: 1, strokeRate: 7, marchWarriors: 8, marchAfter: 330, aggression: 1, beliefMult: 1.2 },
 };
 
 const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);

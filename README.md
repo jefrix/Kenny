@@ -56,6 +56,8 @@ You never give orders. Your followers build, gather, pray and fight on their own
 - **The Hand.** Grab people, rocks and trees, then set them down or throw them. Set a rival villager down at your temple to convert them.
 - **Standard.** Warriors march to it, and carry your border with them. That is how you get close enough to shape or strike enemy land.
 - **Eyes.** Pick the eyes, then click anyone to see the world from where they stand. Drag to look around.
+- **Ages.** Tribes start in the Stone Age and rise through Copper and Bronze to Iron. Each age needs lore, people and proof of craft, and brings new buildings, tools and warrior gear.
+- **Jobs.** Your elders assign priests, farmers, woodcutters, builders, miners, smiths and scribes by need. Practice earns rank, and masters work faster. Warriors rise from recruit to champion. Open **People** to see who does what.
 - **Miracles.** Rain, Bless, Lightning, Firestorm, Earthquake and Flood.
 - **Winning.** Destroy the rival temple, or leave the rival with no followers. Rivals use the same actions and rules as you; the hardest also gets extra prayer.
 

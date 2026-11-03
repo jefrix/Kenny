@@ -74,7 +74,15 @@ const assert = (ok, message) => { if (!ok) throw new Error(message); };
   }
   assert(await read(() => !document.body.classList.contains('watching') && __clay.renderer.controls.enabled), 'god view controls are back');
 
-  await p.keyboard.press('p'); await p.waitForSelector('#pause-veil'); await p.click('#p-resume');
+  // The People panel opens, and each age shows its own temple, buildings and gear.
+  await p.click('#c-people'); await p.waitForSelector('#people table'); await p.waitForTimeout(250); await p.screenshot({ path: `${out}/people.png` }); await p.click('#c-people');
+  for (const age of [1, 2, 3]) {
+    await p.evaluate((a) => { const w = __clay.world, t = w.tribes[0]; for (const tr of w.tribes) { tr.age = a - 1; tr.lore = 99999; tr.metalMade = 9999; tr.metal = 300; tr.wood = 300; tr.food = 300; } let i = 0; const need = () => t.age < a; while (need() && i++ < 900 && !w.over) w.step(); for (let j = 0; j < 400 && !w.over; j++) w.step(); }, age);
+    await p.waitForTimeout(900); await p.screenshot({ path: `${out}/age-${age}.png` });
+    if (await read(() => __clay.world.over)) break;
+  }
+  // The age tour can end the match. Only test pausing if it is still running.
+  if (await read(() => __clay.mode === 'play')) { await p.keyboard.press('p'); await p.waitForSelector('#pause-veil'); await p.click('#p-resume'); }
 
   await p.evaluate(() => { const w = __clay.world; for (let i = 0; i < 2600 && !w.over; i++) w.step(); }); await p.waitForTimeout(800); await p.screenshot({ path: `${out}/later.png` });
   if (await read(() => !__clay.world.over)) await p.evaluate(() => { const w = __clay.world; w.hurtBuilding(w.tribes[1].temple, 99999); });

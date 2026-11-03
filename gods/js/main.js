@@ -1,5 +1,5 @@
 // Screens, input and the game loop.
-import { World, DT, N, MIRACLES, BUILDINGS } from './sim.js';
+import { World, DT, N, MIRACLES, BUILDINGS, AGES, PROFESSIONS, ageProgress, personTitle } from './sim.js';
 import { RivalGod, DIFFICULTIES } from './ai.js';
 import { GodRenderer, TEAM_COLORS } from './render.js';
 import { initAudio, play, setMuted, isMuted } from './audio.js';
@@ -39,12 +39,13 @@ const STEPS = [
   { title: 'Feed the forest', text: 'Your people pray at the temple, and prayer earns belief. Cast Rain near your homes for more trees and children.', done: (s) => s.rain > 0 },
   { title: 'Cross the water', text: 'A strait keeps you apart. Hold Raise land at your shore until a bridge reaches across. You can only shape land inside your border.', done: (s) => s.raises > 10 },
   { title: 'March', text: 'Plant your standard at the far end, and your warriors will go. Their presence extends your border, so you can strike from there.', done: (s) => s.standards > 0 },
+  { title: 'Rise through the ages', text: 'Keep your people fed and give them flat land. Lore, farms, forges and tablet houses carry them from stone to iron. Better metal makes stronger warriors.', done: (s, w) => w.tribes[ME].age >= 2 },
   { title: 'Bring down their temple', text: 'Destroy the rival temple, or leave them with no followers. Warriors and miracles both do the work.', done: () => false },
 ];
 
 let renderer, world, mode = 'menu', difficulty = 'jealous', speed = 1, paused = false, tool = 'hand', accumulator = 0, last = performance.now();
 let held = null, pointer = { x: 0, y: 0, inside: false, ground: null }, activePointers = new Map(), stroke = null, panning = null, trail = [], strokeTimer = 0, keys = new Set(), hover = null, uiTimer = 0, miniTimer = 0;
-let lookDrag = null, progress, stepIndex = 0, seed = 0, omens = [], lastTempleHp = 0, lastAttackOmen = -99, noFlatWarned = false, statsLine = '', uiRefs = {};
+let lastMasterOmen = -99, lookDrag = null, progress, stepIndex = 0, seed = 0, omens = [], lastTempleHp = 0, lastAttackOmen = -99, noFlatWarned = false, statsLine = '', uiRefs = {};
 
 const hudTemplate = () => `
   <section class="belief inlay edged" aria-label="Your people">
@@ -54,10 +55,15 @@ const hudTemplate = () => `
       <div class="stat"><b id="s-pop">0</b><span>followers</span></div>
       <div class="stat"><b id="s-war">0</b><span>warriors</span></div>
       <div class="stat"><b id="s-wood">0</b><span>wood</span></div>
+      <div class="stat"><b id="s-food">0</b><span>food</span></div>
+      <div class="stat"><b id="s-ore">0</b><span>ore</span></div>
+      <div class="stat"><b id="s-metal">0</b><span>metal</span></div>
     </div>
+    <div class="age"><b id="a-name"></b><div class="bar" title="Progress to the next age"><i id="a-bar" style="background:var(--gold)"></i></div><span id="a-need"></span></div>
     <div class="bar" title="Your temple"><i id="my-temple" style="background:var(--you)"></i></div>
   </section>
   <div class="controls">
+    <button class="ctl inlay" id="c-people" aria-pressed="false" title="Who does what (J)">People</button>
     <button class="ctl inlay" id="c-pause" aria-pressed="false" title="Pause (P)">Pause</button>
     <button class="ctl inlay" id="c-speed" title="Game speed">1×</button>
     <button class="ctl inlay" id="c-sound" title="Sound (M)">${isMuted() ? 'Sound off' : 'Sound on'}</button>
@@ -70,6 +76,7 @@ const hudTemplate = () => `
   </section>
   <div class="watch-bar" id="watching" hidden><span id="watching-text"></span><button class="act" id="watch-exit">Return to god view</button></div>
   <div class="omens" id="omens" aria-live="polite"></div>
+  <aside class="people-panel inlay edged" id="people" hidden aria-label="Who does what"></aside>
   <div id="prophecy-slot"></div>
   <div class="tray-wrap">
     <div class="inscription" id="inscription"></div>
@@ -107,6 +114,7 @@ function showHelp() {
     <dl>
       <dt>Hand</dt><dd>Grab and carry. Flick to throw. Set an enemy down at your temple to convert them.</dd>
       <dt>Land</dt><dd>Level ground for homes and raise bridges. You can only touch what lies inside your border.</dd>
+      <dt>Ages</dt><dd>Your people start in the Stone Age and rise through Copper and Bronze to Iron. Lore comes from prayer and from scribes. Open People to see who does what.</dd>
       <dt>Standard</dt><dd>Warriors march to it. Warriors carry your border with them.</dd>
       <dt>Win</dt><dd>Destroy the rival temple, or leave them with no followers.</dd>
       <dt>Eyes</dt><dd>Pick the eyes, then click anyone to see through their eyes. Drag to look around, and press Esc to return.</dd>
@@ -122,18 +130,18 @@ function showHelp() {
 function startMatch(rival, keepSeed) {
   if (renderer.watched) stopWatching();
   difficulty = rival; seed = keepSeed ?? Math.floor(Math.random() * 1e9);
-  mode = 'play'; document.body.classList.remove('menu'); paused = false; speed = 1; tool = 'hand'; held = null; stroke = null; panning = null; omens = []; accumulator = 0; noFlatWarned = false; lastAttackOmen = -99;
+  mode = 'play'; document.body.classList.remove('menu'); paused = false; speed = 1; tool = 'hand'; held = null; stroke = null; panning = null; omens = []; lastMasterOmen = -99; accumulator = 0; noFlatWarned = false; lastAttackOmen = -99;
   world = new World({ seed }); world.rivals.push(new RivalGod(FOE, rival));
   renderer.controls.autoRotate = false; renderer.controls.enabled = true; renderer.setWorld(world, ME);
   progress = { grabs: 0, strokes: 0, rain: 0, raises: 0, standards: 0 }; stepIndex = store.get('tutorial', true) ? 0 : -1; lastTempleHp = world.tribes[ME].temple.hp;
   ui.innerHTML = hudTemplate();
-  uiRefs = Object.fromEntries(['b-value', 'b-rate', 's-pop', 's-war', 's-wood', 'my-temple', 'foe-temple', 'f-line', 'omens', 'inscription', 'prophecy-slot', 'minimap', 'c-pause', 'c-speed', 'c-sound'].map((id) => [id, document.getElementById(id)]));
+  uiRefs = Object.fromEntries(['b-value', 'b-rate', 's-pop', 's-war', 's-wood', 's-food', 's-ore', 's-metal', 'a-name', 'a-bar', 'a-need', 'people', 'c-people', 'my-temple', 'foe-temple', 'f-line', 'omens', 'inscription', 'prophecy-slot', 'minimap', 'c-pause', 'c-speed', 'c-sound'].map((id) => [id, document.getElementById(id)]));
   ui.querySelectorAll('[data-tool]').forEach((b) => b.addEventListener('click', () => { play('click'); const leaving = renderer.watched && b.dataset.tool === 'eyes'; selectTool(leaving ? 'hand' : b.dataset.tool); canvas.focus({ preventScroll: true }); }));
   document.getElementById('watch-exit').addEventListener('click', () => { play('click'); stopWatching(); canvas.focus({ preventScroll: true }); });
   ui.querySelectorAll('[data-tool]').forEach((b) => b.addEventListener('pointerenter', () => { uiRefs.inscription.textContent = describeTool(b.dataset.tool); }));
   ui.querySelector('.tray').addEventListener('pointerleave', () => { uiRefs.inscription.textContent = tool === 'hand' ? '' : describeTool(tool); });
   uiRefs['c-pause'].addEventListener('click', togglePause); uiRefs['c-speed'].addEventListener('click', () => { speed = speed === 1 ? 2 : speed === 2 ? 3 : 1; uiRefs['c-speed'].textContent = `${speed}×`; });
-  uiRefs['c-sound'].addEventListener('click', toggleSound);
+  uiRefs['c-sound'].addEventListener('click', toggleSound); uiRefs['c-people'].addEventListener('click', togglePeople); document.body.classList.remove('people-open');
   const mini = uiRefs.minimap, jump = (e) => { const r = mini.getBoundingClientRect(); renderer.focus((e.clientX - r.left) / r.width * N, (e.clientY - r.top) / r.height * N); };
   mini.addEventListener('pointerdown', (e) => { stopWatching(); jump(e); mini.setPointerCapture(e.pointerId); }); mini.addEventListener('pointermove', (e) => { if (e.buttons) jump(e); });
   selectTool('hand'); renderProphecy(); updateHud(); drawMinimap();
@@ -157,11 +165,12 @@ function stopWatching() {
   ui.querySelector('[data-tool="eyes"]')?.setAttribute('aria-pressed', 'false');
   ui.querySelector(`[data-tool="${tool}"]`)?.setAttribute('aria-pressed', 'true');
 }
+const AGE_NEED = { lore: 'lore', pop: 'followers', farm: 'farm', school: 'tablet house', forge: 'forge', metalMade: 'metal made' };
 const ACTIVITY = { walk: 'Walking', work: 'Working', pray: 'Praying', fight: 'Fighting', swim: 'Swimming for their life', carried: 'In the hand of a god', air: 'Flying through the air', idle: 'Standing around' };
 function updateWatchingText() {
   const p = renderer.watched, el = document.getElementById('watching-text'); if (!p || !el) return;
   const job = p.job?.type === 'chop' && p.state === 'walk' ? 'Off to cut wood' : p.job?.type === 'build' && p.state === 'walk' ? 'Off to build' : p.job?.type === 'flee' ? 'Running for the temple' : p.job?.type === 'march' && p.state === 'walk' ? 'Marching' : ACTIVITY[p.state] || 'Standing around';
-  el.textContent = `${p.tribe === ME ? 'Your' : 'Rival'} ${p.role}. ${job}.`;
+  el.textContent = `${personTitle(p)}, ${p.tribe === ME ? 'yours' : 'rival'}. ${job}.`;
 }
 function checkWatched() {
   const p = renderer.watched; if (!p || world.people.includes(p)) return;
@@ -173,6 +182,19 @@ function selectTool(id) {
   tool = id;
   ui.querySelectorAll('[data-tool]').forEach((b) => b.setAttribute('aria-pressed', b.dataset.tool === id ? 'true' : 'false'));
   if (uiRefs.inscription) uiRefs.inscription.textContent = id === 'hand' ? '' : describeTool(id);
+}
+
+function togglePeople() {
+  const open = uiRefs.people.hidden; uiRefs.people.hidden = !open; uiRefs['c-people'].setAttribute('aria-pressed', open ? 'true' : 'false');
+  document.body.classList.toggle('people-open', open); if (open) renderPeople();
+}
+function renderPeople() {
+  const list = world.people.filter((p) => p.tribe === ME), rows = Object.entries(PROFESSIONS).map(([id, job]) => {
+    const members = list.filter((p) => p.profession === id); if (!members.length && id !== 'priest') return '';
+    const masters = members.filter((p) => p.rank === 2).length;
+    return `<tr title="${esc(job.duty)}"><th scope="row">${job.plural}</th><td>${members.length}</td><td>${masters || ''}</td></tr>`;
+  }).join('');
+  uiRefs.people.innerHTML = `<h3>Who does what</h3><table><thead><tr><td></td><th scope="col">People</th><th scope="col">${'Best'}</th></tr></thead><tbody>${rows}</tbody></table><p>Jobs follow need. Best counts masters and champions.</p>`;
 }
 
 function togglePause() {
@@ -202,7 +224,7 @@ function renderProphecy() {
   slot.innerHTML = `<aside class="prophecy inlay edged"><h3>${stepIndex + 1} of ${STEPS.length}: ${esc(s.title)}</h3><p>${esc(s.text)}</p><button id="p-skip">Hide these tips</button></aside>`;
   slot.querySelector('#p-skip').addEventListener('click', () => { stepIndex = -1; store.set('tutorial', false); renderProphecy(); });
 }
-function advanceProphecy() { if (stepIndex >= 0 && stepIndex < STEPS.length && STEPS[stepIndex].done(progress)) { stepIndex++; play('built'); renderProphecy(); } }
+function advanceProphecy() { if (stepIndex >= 0 && stepIndex < STEPS.length && STEPS[stepIndex].done(progress, world)) { stepIndex++; play('built'); renderProphecy(); } }
 
 function omen(text, bad = false) {
   if (omens.some((o) => o.text === text)) return;
@@ -237,6 +259,13 @@ function handleEvents(audible) {
       case 'death': play('death'); break;
       case 'rivalBridge': play('horn'); omen('The rival is raising land toward you.', true); break;
       case 'standard': if (e.tribe === FOE) { play('horn'); omen('The rival plants a standard. Their warriors are on the move.', true); } break;
+      case 'age':
+        play(e.tribe === ME ? 'win' : 'horn');
+        if (e.tribe === ME) omen(`Your people enter the ${AGES[e.age].name}. ${['', 'They can now mine ore, forge metal and write tablets.', 'Watchtowers rise and warriors take up bronze.', 'Iron arms the strongest army this world has seen.'][e.age]}`);
+        else omen(`The rival enters the ${AGES[e.age].name}.`, true);
+        break;
+      case 'promote': if (e.tribe === ME && e.rank === 2 && world.time - lastMasterOmen > 45) { lastMasterOmen = world.time; play('built'); omen(`${e.title[0].toUpperCase()}${e.title.slice(1)} has mastered the craft.`); } break;
+      case 'arrow': play('hit'); break;
       case 'floodEnd': omen('The waters fall back.'); break;
       default: break;
     }
@@ -248,8 +277,9 @@ function watchOmens() {
   const me = world.tribes[ME], temple = me.temple;
   if (temple && temple.hp < lastTempleHp - 0.5 && world.time - lastAttackOmen > 12) { lastAttackOmen = world.time; omen('Your temple is under attack!', true); play('horn'); }
   if (temple) lastTempleHp = temple.hp;
-  if (me.noSiteSince >= 0 && world.time - me.noSiteSince > 14 && !noFlatWarned) { noFlatWarned = true; omen('Your people have run out of flat ground. Level some land.'); }
+  if (me.noSiteSince >= 0 && world.time - me.noSiteSince > 14 && !noFlatWarned) { noFlatWarned = true; omen('Your people have run out of flat ground. Level some land, or raise a hill for a mine.'); }
   if (me.noSiteSince < 0) noFlatWarned = false;
+  if (me.food < 1 && me.pop > 3 && world.time > 20) omen('Your people are hungry. No children will be born until they have food.', true);
 }
 
 function endMatch() {
@@ -278,9 +308,13 @@ function updateHud() {
   const rate = me.pop * 0.012 + me.praying * 0.15;
   r['b-rate'].textContent = `${me.praying} praying, +${rate.toFixed(1)} a second`;
   r['s-pop'].textContent = `${me.pop}/${me.capacity}`; r['s-war'].textContent = me.warriors; r['s-wood'].textContent = Math.floor(me.wood);
+  r['s-food'].textContent = Math.floor(me.food); r['s-ore'].textContent = Math.floor(me.ore); r['s-metal'].textContent = Math.floor(me.metal);
+  const ageNow = ageProgress(world, me); r['a-name'].textContent = AGES[me.age].name; r['a-bar'].style.width = `${(ageNow ? ageNow.fraction : 1) * 100}%`;
+  r['a-need'].textContent = ageNow ? `${ageNow.next.name} needs ${ageNow.items.filter((i) => i.have < i.need).map((i) => `${i.have}/${i.need} ${AGE_NEED[i.key]}`).join(', ') || 'a moment more'}` : 'The last age';
+  if (!r.people.hidden) renderPeople();
   r['my-temple'].style.width = `${(me.temple ? me.temple.hp / BUILDINGS.temple.hp : 0) * 100}%`;
   r['foe-temple'].style.width = `${(foe.temple ? foe.temple.hp / BUILDINGS.temple.hp : 0) * 100}%`;
-  const line = `${foe.pop} followers, ${foe.warriors} warriors`;
+  const line = `${AGES[foe.age].name}. ${foe.pop} followers, ${foe.warriors} warriors`;
   if (line !== statsLine) { r['f-line'].textContent = line; statsLine = line; }
   ui.querySelectorAll('.tool.miracle').forEach((b) => {
     const id = b.dataset.tool, m = MIRACLES[id], left = (me.cooldowns[id] || 0) - world.time;
@@ -404,6 +438,7 @@ addEventListener('keydown', (e) => {
   keys.add(k);
   if (k === 'p' || (k === ' ' && !paused && e.target === canvas)) { e.preventDefault(); togglePause(); return; }
   if (k === 'm') return toggleSound();
+  if (k === 'j') return togglePeople();
   if (k === 'escape' && renderer.watched && !paused) return stopWatching();
   if (k === 'escape') { if (paused && document.getElementById('pause-veil')) return togglePause(); if (tool !== 'hand') return selectTool('hand'); return togglePause(); }
   if (paused) return;
@@ -453,6 +488,7 @@ function updateCursor() {
   if (tool === 'hand') {
     if (held) { renderer.setCursor(0, 0, 0); return; }
     hover = renderer.pickEntity(pointer.x, pointer.y);
+    if (uiRefs.inscription && !ui.querySelector('.tool:hover')) uiRefs.inscription.textContent = hover?.kind === 'person' ? `${personTitle(hover.ref)}${hover.ref.tribe === ME ? '' : ', rival'}` : '';
     if (hover) renderer.setCursor(hover.ref.x, hover.ref.y, hover.kind === 'person' ? 0.65 : 1, world.inInfluence(ME, hover.ref.x, hover.ref.y));
     else renderer.setCursor(0, 0, 0);
     return;

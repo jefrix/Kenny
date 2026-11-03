@@ -25,7 +25,7 @@ PALETTE = {
     "stone": "#8a8476", "stone_dark": "#5f5a50", "cedar": "#4f8a4e", "cedar_dark": "#3a6f42",
     "palm": "#5c8f3f", "palm_dark": "#44722f", "bark": "#6b4c30", "skin": "#b57a4c", "hair": "#21160f",
     "linen": "#e8dcc0", "bronze": "#b5813a", "gold": "#e6b43a", "clay_hand": "#d9915a",
-    "clay_hand_dark": "#b06d3f", "ember": "#ff9a2e", "cloud": "#fff6e8", "team": "#ffffff", "ash": "#3a342e",
+    "clay_hand_dark": "#b06d3f", "ember": "#ff9a2e", "cloud": "#fff6e8", "team": "#ffffff", "ash": "#3a342e", "soil": "#6d4c2c", "soil_dark": "#54391f", "ore": "#a9683a", "iron_dark": "#454b52", "flint": "#7c7a72",
 }
 materials = {}
 
@@ -197,53 +197,159 @@ def rubble():
 
 # ----- The temple: a three-stepped ziggurat with a central stair -----
 
-def temple():
+def temple_model(name, tier_count, crown=False):
+    """A ziggurat that gains terraces with each age. The Iron Age adds gold and two obelisks."""
     random.seed(7)
-    tiers = [(8.0, 1.5, "brick"), (5.8, 1.35, "brick_light"), (3.8, 1.2, "brick")]
+    tiers = [(8.0, 1.5, "brick"), (5.8, 1.35, "brick_light"), (3.8, 1.2, "brick")][:tier_count]
+    if tier_count == 1:
+        tiers = [(8.0, 1.2, "stone")]
     z = 0.0
     for size, height, material in tiers:
         box(material, (0, 0.25, z + height / 2), (size, size, height), taper=0.93, jitter=0.015)
-        # Vertical buttress ribs, the signature of Mesopotamian brickwork.
         half = size / 2
         ribs = max(4, int(size * 1.2))
-        for i in range(ribs):
-            offset = -half + size * (i + 0.5) / ribs
-            if abs(offset) > 0.8:
-                box("brick_dark", (offset * 0.97, 0.25 - half * 0.99, z + height * 0.47), (0.2, 0.13, height * 0.88), taper=0.93)
-            box("brick_dark", (-half * 0.99, 0.25 + offset * 0.97, z + height * 0.47), (0.13, 0.2, height * 0.88), taper=0.93)
-            box("brick_dark", (half * 0.99, 0.25 + offset * 0.97, z + height * 0.47), (0.13, 0.2, height * 0.88), taper=0.93)
+        if tier_count > 1:
+            # Vertical buttress ribs, the signature of Mesopotamian brickwork.
+            for i in range(ribs):
+                offset = -half + size * (i + 0.5) / ribs
+                if abs(offset) > 0.8:
+                    box("brick_dark", (offset * 0.97, 0.25 - half * 0.99, z + height * 0.47), (0.2, 0.13, height * 0.88), taper=0.93)
+                box("brick_dark", (-half * 0.99, 0.25 + offset * 0.97, z + height * 0.47), (0.13, 0.2, height * 0.88), taper=0.93)
+                box("brick_dark", (half * 0.99, 0.25 + offset * 0.97, z + height * 0.47), (0.13, 0.2, height * 0.88), taper=0.93)
         # Each terrace is a plaster floor edged with a trim of the tribe's colour.
         floor = size * 0.94
-        box("plaster", (0, 0.25, z + height + 0.04), (floor * 0.97, floor * 0.97, 0.08))
+        box("plaster" if tier_count > 1 else "stone_dark", (0, 0.25, z + height + 0.04), (floor * 0.97, floor * 0.97, 0.08))
         rim = 0.2
+        trim = "gold" if crown and size < 5 else "team"
         for sign in (-1, 1):
-            box("team", (0, 0.25 + sign * (floor - rim) / 2, z + height + 0.1), (floor, rim, 0.2))
-            box("team", (sign * (floor - rim) / 2, 0.25, z + height + 0.1), (rim, floor, 0.2))
+            box(trim, (0, 0.25 + sign * (floor - rim) / 2, z + height + 0.1), (floor, rim, 0.2))
+            box(trim, (sign * (floor - rim) / 2, 0.25, z + height + 0.1), (rim, floor, 0.2))
         z += height + 0.1
-    # Grand stair from the ground to the top.
-    steps = 18
+    # Grand stair from the ground to the top terrace.
+    foot, top = -4.55, 0.25 - tiers[-1][0] / 2 + 0.1
+    steps = 6 * tier_count + 3
     for i in range(steps):
         t = i / steps
-        box("plaster", (0, -4.55 + t * 3.7 + 0.1, 0.1 + t * 4.2), (1.25, 0.32, 0.2 + t * 8.4 * 0.5 * 0.5))
+        box("plaster" if tier_count > 1 else "stone_dark", (0, foot + t * (top - foot), (t * z + 0.2) / 2), (1.25, (top - foot) / steps + 0.02, t * z + 0.2))
     # Shrine.
     box("plaster", (0, 0.25, z + 0.7), (2.2, 2.2, 1.4), taper=0.92)
     box("team", (0, 0.25, z + 1.47), (2.45, 2.45, 0.14))
     box("shadow", (0, -0.86, z + 0.55), (0.65, 0.05, 1.1))
     for x in (-0.82, 0.82):
-        cylinder("gold", (x, -1.0, z + 0.65), 0.1, 1.3, 7)
+        cylinder("gold" if tier_count > 1 else "wood", (x, -1.0, z + 0.65), 0.1, 1.3, 7)
     # Horned crown and sacred fire basins.
-    box("gold", (0, 0.25, z + 1.65), (0.75, 0.75, 0.18))
+    box("gold" if tier_count > 1 else "wood", (0, 0.25, z + 1.65), (0.75, 0.75, 0.18))
     for side in (-1, 1):
-        beam("gold", (side * 0.2, 0.25, z + 1.7), (side * 0.72, 0.25, z + 2.45), 0.09)
+        beam("gold" if tier_count > 1 else "wood", (side * 0.2, 0.25, z + 1.7), (side * 0.72, 0.25, z + 2.45), 0.09)
     for x, y in ((-3.4, -3.1), (3.4, -3.1)):
-        cylinder("bronze", (x, y, 1.75), 0.2, 0.42, 7, top_radius=0.38)
-        blob("ember", (x, y, 2.1), (0.22, 0.22, 0.32), jitter=0.04)
+        cylinder("bronze" if tier_count > 1 else "stone_dark", (x, y, tiers[0][1] + 0.25), 0.2, 0.42, 7, top_radius=0.38)
+        blob("ember", (x, y, tiers[0][1] + 0.6), (0.22, 0.22, 0.32), jitter=0.04)
     # Flanking pillars with banners at the stair foot.
     for x in (-1.25, 1.25):
-        cylinder("plaster", (x, -5.0, 0.9), 0.17, 1.8, 7)
-        box("gold", (x, -5.0, 1.84), (0.42, 0.42, 0.1))
+        cylinder("plaster" if tier_count > 1 else "wood", (x, -5.0, 0.9), 0.17, 1.8, 7)
+        box("gold" if tier_count > 1 else "wood", (x, -5.0, 1.84), (0.42, 0.42, 0.1))
         box("team", (x, -5.2, 1.2), (0.3, 0.04, 0.95))
-    export("temple")
+    if crown:
+        for x in (-4.9, 4.9):
+            box("iron_dark", (x, -3.6, 2.2), (0.7, 0.7, 4.4), taper=0.55)
+            box("gold", (x, -3.6, 4.5), (0.42, 0.42, 0.34), taper=0.1)
+        box("gold", (0, 0.25, z + 3.0), (0.3, 0.3, 0.9), taper=0.2)
+    export(name)
+
+
+# ----- Workplaces -----
+
+def hut_reed():
+    """A Stone Age home: a round reed hut with a thatched cone."""
+    random.seed(13)
+    cylinder("reed", (0, 0, 0.42), 1.0, 0.84, 9, top_radius=0.92)
+    cylinder("wood_light", (0, 0, 1.15), 1.2, 0.72, 9, top_radius=0.12)
+    door(0, -0.9, 0.42, 0.56)
+    for x in (-0.3, 0.3):
+        beam("wood", (x, -1.2, 0), (x, -1.2, 0.72), 0.03)
+    box("team", (0, -1.2, 0.74), (0.72, 0.28, 0.04))
+    export("hut_reed")
+
+
+def farm():
+    random.seed(15)
+    box("soil", (0, 0, 0.04), (4.1, 4.1, 0.08))
+    for row in range(6):
+        y = -1.65 + row * 0.66
+        box("soil_dark", (0, y, 0.1), (3.8, 0.2, 0.05))
+        for i in range(10):
+            x = -1.7 + i * 0.38 + random.uniform(-0.04, 0.04)
+            height = random.uniform(0.32, 0.5)
+            cylinder("reed" if row % 2 else "palm", (x, y, 0.1 + height / 2), 0.06, height, 4, top_radius=0.02)
+    for x, y in ((-2.05, -2.05), (2.05, -2.05), (-2.05, 2.05), (2.05, 2.05)):
+        beam("wood", (x, y, 0), (x, y, 0.5), 0.04)
+    for a, b in (((-2.05, -2.05), (2.05, -2.05)), ((-2.05, 2.05), (2.05, 2.05)), ((-2.05, -2.05), (-2.05, 2.05)), ((2.05, -2.05), (2.05, 2.05))):
+        beam("wood_light", (*a, 0.38), (*b, 0.38), 0.025)
+    beam("wood", (-2.05, -2.05, 0), (-2.05, -2.05, 1.05), 0.04)
+    box("team", (-1.82, -2.05, 0.88), (0.42, 0.03, 0.28))
+    export("farm")
+
+
+def mine():
+    random.seed(17)
+    blob("stone", (0, 0.45, 0.42), (1.5, 1.2, 0.95), subdivisions=2, jitter=0.1)
+    box("shadow", (0, -0.8, 0.45), (0.86, 0.3, 0.9))
+    for x in (-0.5, 0.5):
+        beam("wood", (x, -0.98, 0), (x, -0.98, 1.05), 0.075)
+    beam("wood", (-0.62, -0.98, 1.05), (0.62, -0.98, 1.05), 0.08)
+    for i in range(5):
+        blob("ore", (0.95 + random.uniform(-0.28, 0.28), -0.85 + random.uniform(-0.28, 0.28), 0.14), (0.16, 0.15, 0.14), jitter=0.2)
+    box("wood_light", (-1.05, -0.95, 0.24), (0.55, 0.38, 0.26), taper=1.15)
+    beam("wood", (0.3, -1.3, 0), (0.3, -1.3, 1.65), 0.035)
+    box("team", (0.54, -1.3, 1.5), (0.46, 0.03, 0.3))
+    export("mine")
+
+
+def forge():
+    random.seed(19)
+    box("stone", (0, 0.35, 0.5), (2.5, 1.9, 1.0), taper=0.93, jitter=0.02)
+    box("stone_dark", (0.75, 0.75, 1.42), (0.7, 0.7, 1.9), taper=0.68)
+    box("ember", (-0.2, -0.61, 0.42), (0.74, 0.05, 0.42))
+    box("wood", (-0.1, -0.1, 1.05), (2.3, 2.3, 0.1))
+    for x in (-1.15, 0.35):
+        beam("wood", (x, -1.45, 0), (x, -1.45, 0.98), 0.05)
+    box("team", (-0.4, -1.1, 1.0), (1.8, 0.92, 0.05), rotation=(math.radians(-10), 0, 0))
+    # Anvil on a stump.
+    cylinder("wood", (0.72, -1.22, 0.15), 0.2, 0.3, 7)
+    box("iron_dark", (0.72, -1.22, 0.38), (0.42, 0.17, 0.16), taper=0.76)
+    export("forge")
+
+
+def school():
+    """The tablet house, where scribes press wedges into clay."""
+    random.seed(23)
+    box("plaster", (0, 0.2, 0.75), (3.0, 2.5, 1.5), taper=0.95, jitter=0.01)
+    box("brick_light", (0, 0.2, 1.57), (3.25, 2.75, 0.14))
+    door(0, -1.07, 0.6, 0.98)
+    for x in (-1.15, -0.62, 0.62, 1.15):
+        cylinder("brick_dark", (x, -1.34, 0.72), 0.09, 1.44, 7)
+    box("brick_light", (0, -1.32, 1.5), (2.9, 0.42, 0.13))
+    box("team", (0, -1.56, 1.2), (1.7, 0.04, 0.36))
+    # Drying racks of clay tablets.
+    for x in (-1.75, 1.75):
+        box("wood", (x, -0.3, 0.42), (0.4, 1.4, 0.84))
+        for i in range(4):
+            box("brick_light", (x, -0.8 + i * 0.33, 0.9), (0.27, 0.24, 0.06))
+    export("school")
+
+
+def tower():
+    random.seed(29)
+    box("brick", (0, 0, 1.4), (1.8, 1.8, 2.8), taper=0.84, jitter=0.015)
+    box("brick_light", (0, 0, 2.86), (1.9, 1.9, 0.14))
+    for sign_x in (-1, 0, 1):
+        for sign_y in (-1, 0, 1):
+            if sign_x or sign_y:
+                box("brick_dark", (sign_x * 0.82, sign_y * 0.82, 3.1), (0.3, 0.3, 0.36))
+    box("shadow", (0, -0.88, 0.45), (0.46, 0.08, 0.9))
+    beam("wood", (0, 0, 2.9), (0, 0, 4.4), 0.04)
+    box("team", (0.32, 0, 4.15), (0.6, 0.03, 0.42))
+    export("tower")
 
 
 # ----- Nature -----
@@ -318,19 +424,92 @@ def villager():
     export("villager")
 
 
+def warrior_stone():
+    """A Stone Age fighter: no armour, a club with a flint head."""
+    random.seed(52)
+    h = body_parts(0.3)
+    beam("wood_light", (0.16, 0.06, 0.18), (0.2, 0.06, 0.62), 0.024, 5)
+    blob("flint", (0.205, 0.06, 0.66), (0.075, 0.07, 0.09), jitter=0.15)
+    export("warrior_stone")
+
+
+def warrior_copper():
+    """Copper Age: a leather cap and a copper-headed spear."""
+    random.seed(54)
+    h = body_parts(0.3)
+    blob("wood_light", (0, 0, h + 0.22), (0.093, 0.093, 0.07), subdivisions=1, jitter=0.0)
+    beam("wood_light", (0.17, 0.05, 0.02), (0.17, 0.05, 0.78), 0.016, 5)
+    cylinder("ore", (0.17, 0.05, 0.83), 0.038, 0.12, 5, top_radius=0.0)
+    cylinder("wood", (-0.18, 0.04, 0.27), 0.11, 0.03, 7, rotation=(0, math.pi / 2, 0))
+    export("warrior_copper")
+
+
 def warrior():
+    """Bronze Age: helmet with a crest, breastplate, tall spear and a round shield."""
     random.seed(53)
     h = body_parts(0.3)
-    # Bronze helmet with a tribal crest.
     blob("bronze", (0, 0, h + 0.22), (0.095, 0.095, 0.075), subdivisions=1, jitter=0.0)
     box("team", (0, 0, h + 0.3), (0.035, 0.17, 0.09))
     box("bronze", (0, 0, h + 0.015), (0.2, 0.14, 0.09), taper=0.82)
-    # Spear, held upright so it reads at a distance, plus a round shield.
     beam("wood_light", (0.17, 0.05, 0.02), (0.17, 0.05, 0.86), 0.016, 5)
     cylinder("bronze", (0.17, 0.05, 0.92), 0.04, 0.13, 5, top_radius=0.0)
     cylinder("team", (-0.18, 0.04, 0.27), 0.135, 0.035, 9, rotation=(0, math.pi / 2, 0))
     cylinder("gold", (-0.205, 0.04, 0.27), 0.04, 0.025, 7, rotation=(0, math.pi / 2, 0))
     export("warrior")
+
+
+def warrior_iron():
+    """Iron Age: closed helmet, scale armour, tower shield and a long iron sword."""
+    random.seed(55)
+    h = body_parts(0.32)
+    blob("iron_dark", (0, 0, h + 0.2), (0.1, 0.1, 0.1), subdivisions=1, jitter=0.0)
+    box("team", (0, 0.01, h + 0.31), (0.03, 0.2, 0.13))
+    box("iron_dark", (0, 0, h - 0.04), (0.22, 0.17, 0.2), taper=0.84)
+    box("iron_dark", (0.18, 0.05, 0.56), (0.04, 0.025, 0.6), taper=0.5)
+    box("gold", (0.18, 0.05, 0.25), (0.13, 0.04, 0.03))
+    box("wood", (0.18, 0.05, 0.19), (0.03, 0.03, 0.1))
+    box("team", (-0.2, 0.03, 0.3), (0.035, 0.27, 0.48))
+    box("iron_dark", (-0.22, 0.03, 0.3), (0.015, 0.09, 0.42))
+    export("warrior_iron")
+
+
+# ----- Tools. Held in the right hand. "team" here is the metal of the tribe's current age. -----
+
+def tool_axe():
+    beam("wood_light", (0.17, 0.02, 0.1), (0.19, 0.03, 0.62), 0.016, 5)
+    box("team", (0.25, 0.03, 0.57), (0.13, 0.03, 0.12))
+    export("tool_axe")
+
+
+def tool_hoe():
+    beam("wood_light", (0.17, 0.02, 0.05), (0.2, 0.03, 0.72), 0.014, 5)
+    box("team", (0.2, -0.04, 0.69), (0.05, 0.16, 0.05))
+    export("tool_hoe")
+
+
+def tool_pick():
+    beam("wood_light", (0.17, 0.02, 0.15), (0.19, 0.03, 0.62), 0.016, 5)
+    box("team", (0.19, 0.03, 0.62), (0.32, 0.035, 0.04), taper=0.8)
+    export("tool_pick")
+
+
+def tool_hammer():
+    beam("wood_light", (0.17, 0.02, 0.2), (0.18, 0.03, 0.58), 0.016, 5)
+    box("team", (0.18, 0.03, 0.6), (0.14, 0.09, 0.09))
+    export("tool_hammer")
+
+
+def tool_tablet():
+    box("brick_light", (0.14, -0.1, 0.32), (0.13, 0.03, 0.17))
+    box("brick_dark", (0.14, -0.118, 0.34), (0.09, 0.008, 0.012))
+    box("brick_dark", (0.14, -0.118, 0.3), (0.09, 0.008, 0.012))
+    export("tool_tablet")
+
+
+def tool_staff():
+    beam("wood", (0.16, 0.03, 0.02), (0.16, 0.03, 0.82), 0.016, 5)
+    blob("team", (0.16, 0.03, 0.86), (0.04, 0.04, 0.05), jitter=0.0)
+    export("tool_staff")
 
 
 def standard():
@@ -387,11 +566,29 @@ hut()
 house()
 site()
 rubble()
-temple()
+temple_model("temple_stone", 1)
+temple_model("temple_copper", 2)
+temple_model("temple", 3)
+temple_model("temple_iron", 3, crown=True)
+hut_reed()
+farm()
+mine()
+forge()
+school()
+tower()
 cedar()
 palm()
 rock()
 cloud()
 villager()
+warrior_stone()
+warrior_copper()
 warrior()
+warrior_iron()
+tool_axe()
+tool_hoe()
+tool_pick()
+tool_hammer()
+tool_tablet()
+tool_staff()
 standard()
