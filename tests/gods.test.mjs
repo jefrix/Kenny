@@ -1,6 +1,6 @@
 // Run with: node tests/gods.test.mjs
 import assert from 'node:assert';
-import { World, N, MIRACLES, BUILDINGS, TEMPLE_GUARD } from '../gods/js/sim.js';
+import { World, N, MIRACLES, BUILDINGS, TEMPLE_GUARD, AGES, PROFESSIONS } from '../gods/js/sim.js';
 import { RivalGod } from '../gods/js/ai.js';
 
 const verbose = process.argv.includes('-v');
@@ -110,6 +110,37 @@ for (const name of Object.keys(MIRACLES)) {
 {
   const w = new World({ seed: 2 }); w.hurtBuilding(w.tribes[1].temple, 99999);
   assert.ok(w.over); assert.equal(w.winner, 0);
+}
+
+// Ages: a tribe left in peace rises to Iron, slowly, with real jobs and better gear along the way.
+{
+  let finished = 0;
+  for (const seed of [1, 2, 3]) {
+    const w = new World({ seed }); const t = w.tribes[0];
+    assert.equal(t.age, 0); assert.equal(AGES[t.age].id, 'stone');
+    run(w, 30); const early = w.people.filter((p) => p.tribe === 0);
+    assert.ok(early.every((p) => p.name && PROFESSIONS[p.profession]), 'everyone has a name and a job');
+    while (w.time < 1800 && t.age < 3) w.step();
+    if (verbose) console.log('ages', seed, (t.ageAt || []).map((v) => (v / 60).toFixed(1)).join(' '), 'pop', t.pop, 'metal', t.metalMade);
+    if (t.age < 3) continue;
+    finished++;
+    assert.ok(t.ageAt[1] > 120, `Copper takes a while: ${t.ageAt[1]}`); assert.ok(t.ageAt[3] > 600, `Iron takes longer: ${t.ageAt[3]}`);
+    assert.ok(t.ageAt[1] < t.ageAt[2] && t.ageAt[2] < t.ageAt[3], 'ages in order');
+    const jobs = new Set(w.people.filter((p) => p.tribe === 0).map((p) => p.profession));
+    for (const job of ['priest', 'farmer', 'miner', 'smith', 'scribe', 'warrior']) assert.ok(jobs.has(job), `someone is a ${job}`);
+    assert.ok(w.people.some((p) => p.tribe === 0 && p.rank > 0), 'some people have earned rank');
+    for (const type of ['farm', 'mine', 'forge', 'school', 'tower']) assert.ok(w.buildings.some((b) => b.tribe === 0 && b.type === type), `built a ${type}`);
+    run(w, 60);
+    assert.ok(w.people.some((p) => p.tribe === 0 && p.role === 'warrior' && p.gear === 3), 'warriors carry iron');
+  }
+  assert.ok(finished >= 2, `reached Iron on ${finished} of 3 seeds`);
+}
+
+// Metal matters: a warrior in iron beats a warrior in stone, and hunger stops births.
+{
+  const fight = (gearA, gearB) => { const w = new World({ seed: 41 }); w.people.length = 0; const a = w.spawnPerson(0, 20, 20, 'warrior'), b = w.spawnPerson(1, 20.5, 20, 'warrior'); a.gear = gearA; b.gear = gearB; a.hp = AGES[gearA].hp; b.hp = AGES[gearB].hp; w.buildGrid(); for (let i = 0; i < 900 && w.people.length === 2; i++) { a.job = { type: 'fight', target: b }; b.job = { type: 'fight', target: a }; a.x = 20; a.y = 20; b.x = 20.5; b.y = 20; w.updatePerson(a); w.updatePerson(b); w.time += 0.1; w.tick++; } return w.people.includes(a); };
+  assert.ok(fight(3, 0), 'iron beats stone');
+  const w = new World({ seed: 42 }); const before = w.tribes[0].stats.born; for (let i = 0; i < 400; i++) { w.tribes[0].food = 0; w.step(); } assert.equal(w.tribes[0].stats.born, before, 'no food, no births');
 }
 
 // The rival wins against an idle player at every level, but takes a fair while.

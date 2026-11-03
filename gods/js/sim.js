@@ -17,7 +17,47 @@ export const BUILDINGS = {
   temple: { hp: 3000, capacity: 10, radius: 4.2, influence: 17 },
   hut: { hp: 160, capacity: 3, radius: 1.4, influence: 8, cost: 10, labor: 14, flat: 0.34 },
   house: { hp: 380, capacity: 9, radius: 2.3, influence: 10, cost: 16, labor: 22, flat: 0.28 },
+  farm: { hp: 110, capacity: 0, radius: 2.2, influence: 6, cost: 6, labor: 8, flat: 0.6, workers: 2 },
+  mine: { hp: 300, capacity: 0, radius: 1.7, influence: 6, cost: 12, labor: 16, flat: 1.1, workers: 3 },
+  forge: { hp: 260, capacity: 0, radius: 1.7, influence: 6, cost: 14, labor: 16, flat: 0.7, workers: 2 },
+  school: { hp: 260, capacity: 0, radius: 2, influence: 7, cost: 14, labor: 18, flat: 0.65, workers: 3 },
+  tower: { hp: 520, capacity: 0, radius: 1.1, influence: 9, cost: 16, metal: 4, labor: 18, flat: 0.7 },
 };
+
+// Each age asks for lore, people and some proof of craft. Everything else follows from what your people can make.
+export const AGES = [
+  { id: 'stone', name: 'Stone Age', tool: 1, gear: 1, hp: 46 },
+  { id: 'copper', name: 'Copper Age', tool: 1.15, gear: 1.25, hp: 52, needs: { lore: 60, pop: 12, farm: 1 } },
+  { id: 'bronze', name: 'Bronze Age', tool: 1.3, gear: 1.6, hp: 62, needs: { lore: 330, pop: 24, school: 1, forge: 1, metalMade: 30 } },
+  { id: 'iron', name: 'Iron Age', tool: 1.5, gear: 2.1, hp: 76, needs: { lore: 1250, pop: 36, school: 2, forge: 2, metalMade: 120 } },
+];
+export const PROFESSIONS = {
+  priest: { name: 'priest', plural: 'Priests', duty: 'Prays for belief and keeps the old lore.' },
+  farmer: { name: 'farmer', plural: 'Farmers', duty: 'Grows the food that lets children be born.' },
+  woodcutter: { name: 'woodcutter', plural: 'Woodcutters', duty: 'Cuts timber for every building.' },
+  builder: { name: 'builder', plural: 'Builders', duty: 'Raises homes and workshops.' },
+  miner: { name: 'miner', plural: 'Miners', duty: 'Digs ore from the mine.' },
+  smith: { name: 'smith', plural: 'Smiths', duty: 'Turns ore into metal for warriors.' },
+  scribe: { name: 'scribe', plural: 'Scribes', duty: 'Writes tablets, the fastest source of lore.' },
+  warrior: { name: 'warrior', plural: 'Warriors', duty: 'Guards the temple or marches to the standard.' },
+};
+const WORK_RANKS = ['apprentice', 'journeyman', 'master'], WAR_RANKS = ['recruit', 'veteran', 'champion'];
+const WORK_XP = [0, 90, 240], WAR_XP = [0, 12, 40], RANK_SPEED = [1, 1.25, 1.6], RANK_MIGHT = [1, 1.2, 1.45];
+const NAME_START = ['Enme', 'Ninsu', 'Ur', 'Lugal', 'Shara', 'Ishme', 'Nabu', 'Geme', 'Kuba', 'Puzur', 'Ili', 'Shu', 'Amar', 'Zimri', 'Tudha', 'Hamu', 'Naram', 'Ashur', 'Belit', 'Tabni'];
+const NAME_END = ['', 'kal', 'dan', 'ra', 'ti', 'gal', 'ni', 'sin', 'bi', 'lum'];
+
+export const rankName = (p) => (p.role === 'warrior' ? WAR_RANKS : WORK_RANKS)[p.rank || 0];
+export const personTitle = (p) => `${p.name}, ${rankName(p)} ${p.role === 'warrior' ? 'warrior' : PROFESSIONS[p.profession].name}`;
+const maxHp = (p) => (p.role === 'warrior' ? AGES[p.gear || 0].hp * (1 + (p.rank || 0) * 0.15) : 22);
+
+// What the tribe still needs for the next age, for the rules and the HUD alike.
+export function ageProgress(world, tribe) {
+  const next = AGES[tribe.age + 1]; if (!next) return null;
+  const count = (type) => world.buildings.filter((b) => b.tribe === tribe.id && b.type === type && b.progress >= 1).length;
+  const have = (key) => (key === 'lore' ? tribe.lore : key === 'pop' ? tribe.pop : key === 'metalMade' ? tribe.metalMade : count(key));
+  const items = Object.entries(next.needs).map(([key, need]) => ({ key, need, have: Math.floor(have(key)) }));
+  return { next, items, done: items.every((i) => i.have >= i.need), fraction: items.reduce((sum, i) => sum + Math.min(1, i.have / i.need), 0) / items.length };
+}
 const STROKE_COST = 0.35;
 
 function mulberry(seed) {
@@ -39,7 +79,7 @@ export class World {
     this.events = []; this.rivals = []; this.over = false; this.winner = -1; this.dirty = null; this.terrainVersion = 0;
     this.passDirty = true; this.influenceDirty = true; this.pathBudget = 0; this.grid = new Map();
     this.tribes = [0, 1].map((id) => ({
-      id, belief: 60, wood: 18, pop: 0, warriors: 0, capacity: 0, praying: 0, temple: null, standard: null, carried: null,
+      id, belief: 60, wood: 20, food: 26, ore: 0, metal: 0, lore: 0, metalMade: 0, age: 0, pop: 0, warriors: 0, capacity: 0, praying: 0, temple: null, standard: null, carried: null,
       cooldowns: {}, fertileUntil: 0, birthTimer: 3, plannerTimer: 1 + id * 0.3, noSiteSince: -1, beliefMult: 1,
       stats: { miraclesCast: 0, born: 0, converted: 0, lost: 0, buildings: 0, peak: 0 },
     }));
@@ -198,6 +238,7 @@ export class World {
   }
 
   stampBlocked(b, value) {
+    if (b.type === 'farm') return; // People walk through the fields.
     const r = b.type === 'temple' ? 3.8 : BUILDINGS[b.type].radius - 0.4;
     for (let y = Math.floor(b.y - r); y <= Math.ceil(b.y + r); y++) for (let x = Math.floor(b.x - r); x <= Math.ceil(b.x + r); x++) {
       if (x >= 0 && y >= 0 && x < N && y < N && dist(x, y, b.x, b.y) <= r) this.blocked[idx(x, y)] = value;
@@ -254,7 +295,7 @@ export class World {
   }
 
   spawnPerson(tribe, x, y, role) {
-    const p = { id: this.nextId++, tribe, role, x, y, z: 0, vx: 0, vy: 0, vz: 0, hp: role === 'warrior' ? 46 : 22, state: 'idle', job: null, path: null, pathIndex: 0, pathGoal: null, navVersion: 0, think: this.rng(), blessUntil: 0, carry: 0, heading: this.rng() * 6.28, moving: false, scared: 0, attack: 0, offX: (this.rng() - 0.5) * 0.7, offY: (this.rng() - 0.5) * 0.7, seed: this.rng() * 100, work: 0 };
+    const p = { id: this.nextId++, tribe, role, x, y, z: 0, vx: 0, vy: 0, vz: 0, hp: role === 'warrior' ? 46 : 22, name: NAME_START[Math.floor(this.rng() * NAME_START.length)] + NAME_END[Math.floor(this.rng() * NAME_END.length)], profession: role === 'warrior' ? 'warrior' : 'priest', rank: 0, xp: 0, gear: 0, state: 'idle', job: null, path: null, pathIndex: 0, pathGoal: null, navVersion: 0, think: this.rng(), blessUntil: 0, carry: 0, heading: this.rng() * 6.28, moving: false, scared: 0, attack: 0, offX: (this.rng() - 0.5) * 0.7, offY: (this.rng() - 0.5) * 0.7, seed: this.rng() * 100, work: 0 };
     this.people.push(p); return p;
   }
 
@@ -278,7 +319,7 @@ export class World {
   convert(p, tribe) {
     if (p.tribe === tribe) return;
     this.tribes[tribe].stats.converted++;
-    p.tribe = tribe; p.role = 'villager'; p.hp = 22; p.job = null; p.path = null; p.state = 'idle'; p.scared = 0;
+    p.tribe = tribe; p.role = 'villager'; p.profession = 'priest'; p.rank = 0; p.xp = 0; p.gear = 0; p.hp = 22; p.job = null; p.path = null; p.state = 'idle'; p.scared = 0;
     this.events.push({ type: 'convert', x: p.x, y: p.y, tribe });
   }
 
@@ -370,7 +411,7 @@ export class World {
     this.events.push({ type: 'miracle', name, x, y, tribe: tribeId, radius: def.radius });
     if (name === 'lightning') this.strike(tribeId, x, y);
     else if (name === 'rain') this.storms.push({ kind: 'rain', x, y, tribe: tribeId, until: this.time + 10, seeds: 12, next: 0 });
-    else if (name === 'bless') { for (const p of this.people) if (p.tribe === tribeId && dist(p.x, p.y, x, y) <= def.radius) { p.blessUntil = this.time + 25; p.hp = Math.min(p.hp + 20, p.role === 'warrior' ? 46 : 22); } }
+    else if (name === 'bless') { for (const p of this.people) if (p.tribe === tribeId && dist(p.x, p.y, x, y) <= def.radius) { p.blessUntil = this.time + 25; p.hp = Math.min(p.hp + 20, maxHp(p)); } }
     else if (name === 'fire') this.storms.push({ kind: 'fire', x, y, tribe: tribeId, at: this.time + 0.9, until: this.time + 1 });
     else if (name === 'quake') this.storms.push({ kind: 'quake', x, y, tribe: tribeId, until: this.time + 3, next: 0 });
     else if (name === 'flood') { this.seaTarget = 1.15; this.floodUntil = this.time + 18; }
@@ -471,6 +512,7 @@ export class World {
 
   updateTribe(tribe) {
     tribe.belief = Math.min(BELIEF_CAP, tribe.belief + tribe.pop * 0.012 * DT * tribe.beliefMult);
+    tribe.food = Math.max(0, tribe.food - tribe.pop * 0.024 * DT);
     if (this.time > 0) {
       let capacity = 0, count = 0, warriors = 0;
       for (const b of this.buildings) if (b.tribe === tribe.id && b.progress >= 1) capacity += BUILDINGS[b.type].capacity;
@@ -480,9 +522,10 @@ export class World {
     tribe.birthTimer -= DT * (tribe.fertileUntil > this.time ? 2 : 1);
     if (tribe.birthTimer <= 0) {
       tribe.birthTimer = 7 + tribe.pop * 0.12;
-      if (tribe.pop < Math.min(tribe.capacity, MAX_POP)) {
-        const homes = this.buildings.filter((b) => b.tribe === tribe.id && b.progress >= 1);
+      if (tribe.pop < Math.min(tribe.capacity, MAX_POP) && tribe.food >= 2) {
+        const homes = this.buildings.filter((b) => b.tribe === tribe.id && b.progress >= 1 && BUILDINGS[b.type].capacity > 0);
         if (homes.length) {
+          tribe.food -= 2;
           const home = homes[Math.floor(this.rng() * homes.length)], a = this.rng() * 6.28, r = BUILDINGS[home.type].radius + 0.8;
           const x = clamp(home.x + Math.cos(a) * r, 1, N - 2), y = clamp(home.y + Math.sin(a) * r, 1, N - 2);
           if (this.heightAt(x, y) > this.sea) { this.spawnPerson(tribe.id, x, y, 'villager'); tribe.stats.born++; this.events.push({ type: 'birth', x, y, tribe: tribe.id }); }
@@ -490,47 +533,132 @@ export class World {
       }
     }
     tribe.plannerTimer -= DT;
-    if (tribe.plannerTimer <= 0) { tribe.plannerTimer = 1.5; this.planBuildings(tribe); this.trainWarriors(tribe); }
+    if (tribe.plannerTimer <= 0) { tribe.plannerTimer = 1.5; this.planBuildings(tribe); this.trainWarriors(tribe); this.assignJobs(tribe); this.equipWarriors(tribe); this.checkAge(tribe); }
   }
 
   trainWarriors(tribe) {
     const wanted = tribe.pop >= 10 ? Math.floor(tribe.pop * (tribe.standard ? 0.42 : 0.28)) : 0;
     if (tribe.warriors >= wanted) return;
     const recruit = this.people.find((p) => p.tribe === tribe.id && p.role === 'villager' && p.state === 'pray') || this.people.find((p) => p.tribe === tribe.id && p.role === 'villager' && p.state === 'idle' && !p.job);
-    if (recruit) { recruit.role = 'warrior'; recruit.hp = 46; recruit.job = null; recruit.path = null; recruit.state = 'idle'; this.events.push({ type: 'recruit', x: recruit.x, y: recruit.y, tribe: tribe.id }); }
+    if (recruit) { recruit.role = 'warrior'; recruit.profession = 'warrior'; recruit.rank = 0; recruit.xp = 0; recruit.gear = 0; recruit.hp = 46; recruit.job = null; recruit.path = null; recruit.state = 'idle'; this.events.push({ type: 'recruit', x: recruit.x, y: recruit.y, tribe: tribe.id }); }
+  }
+
+  // The elders decide who does what, by need. People change jobs rarely, because changing costs them their rank.
+  assignJobs(tribe) {
+    const civilians = this.people.filter((p) => p.tribe === tribe.id && p.role === 'villager');
+    if (!civilians.length) return;
+    const count = (type) => this.buildings.filter((b) => b.tribe === tribe.id && b.type === type && b.progress >= 1).length;
+    const sites = this.buildings.some((b) => b.tribe === tribe.id && b.progress < 1) ? this.buildings.filter((b) => b.tribe === tribe.id && b.progress < 1).length : 0;
+    const total = civilians.length, wanted = {
+      farmer: tribe.food > tribe.pop * 5 + 40 ? Math.min(1, count('farm')) : Math.min(count('farm') * BUILDINGS.farm.workers, Math.ceil(tribe.pop / 8) + (tribe.food < 10 ? 1 : 0)),
+      builder: sites ? Math.min(sites * 2, Math.max(1, Math.ceil(total * 0.25))) : (total > 14 ? 1 : 0),
+      woodcutter: tribe.wood < 30 ? Math.ceil(total * 0.3) : tribe.wood < 70 ? Math.ceil(total * 0.1) : 0,
+      miner: Math.min(count('mine') * BUILDINGS.mine.workers, Math.ceil(total * 0.14)),
+      smith: tribe.ore >= 2 || tribe.metal < 6 ? Math.min(count('forge') * BUILDINGS.forge.workers, Math.ceil(total * 0.1)) : 0,
+      scribe: Math.min(count('school') * BUILDINGS.school.workers, Math.ceil(total * 0.15)),
+    };
+    const members = (job) => civilians.filter((p) => p.profession === job);
+    let moves = 2;
+    for (const [job, target] of Object.entries(wanted)) {
+      const current = members(job);
+      if (current.length > target && moves > 0) { const p = current.sort((a, b) => a.xp - b.xp)[0]; this.setProfession(p, 'priest'); moves--; }
+      else if (current.length < target && moves > 0) {
+        const spare = members('priest').sort((a, b) => a.xp - b.xp)[0];
+        if (spare && members('priest').length > Math.floor(total * 0.15)) { this.setProfession(spare, job); moves--; }
+      }
+    }
+  }
+
+  setProfession(p, job) {
+    p.profession = job; p.rank = 0; p.xp = 0; p.work = 0;
+    if (p.job && p.carry === 0) { p.job = null; p.path = null; p.think = this.rng(); }
+  }
+
+  gainXp(p, amount) {
+    p.xp += amount;
+    const table = p.role === 'warrior' ? WAR_XP : WORK_XP;
+    if (p.rank < 2 && p.xp >= table[p.rank + 1]) {
+      p.rank++;
+      this.events.push({ type: 'promote', x: p.x, y: p.y, tribe: p.tribe, title: personTitle(p), rank: p.rank, id: p.id });
+    }
+  }
+
+  // New metal goes to the warriors a pair at a time, so an army's look and strength change gradually.
+  equipWarriors(tribe) {
+    if (!tribe.age) return;
+    let upgrades = 2;
+    for (const p of this.people) {
+      if (!upgrades || tribe.metal < 2) break;
+      if (p.tribe !== tribe.id || p.role !== 'warrior' || p.gear >= tribe.age) continue;
+      tribe.metal -= 2; p.gear = tribe.age; p.hp = maxHp(p); upgrades--;
+    }
+  }
+
+  checkAge(tribe) {
+    const progress = ageProgress(this, tribe);
+    if (progress && progress.done) {
+      tribe.age++; tribe.ageAt = tribe.ageAt || []; tribe.ageAt[tribe.age] = this.time;
+      this.events.push({ type: 'age', tribe: tribe.id, age: tribe.age, x: tribe.temple.x, y: tribe.temple.y });
+    }
   }
 
   planBuildings(tribe) {
     const mine = this.buildings.filter((b) => b.tribe === tribe.id), sites = mine.filter((b) => b.progress < 1);
     if (sites.length >= 2 + Math.floor(tribe.pop / 18)) return;
-    if (tribe.capacity + sites.length * 3 >= Math.min(tribe.pop + 7, MAX_POP)) return; // Only build when people need homes.
+    const count = (type) => mine.filter((b) => b.type === type).length;
+    const needsHome = tribe.capacity + sites.filter((b) => BUILDINGS[b.type].capacity).length * 3 < Math.min(tribe.pop + 7, MAX_POP);
     // A hut that now has room around it grows into a house, the reward for levelling land.
-    if (tribe.wood >= BUILDINGS.house.cost) {
+    if (needsHome && tribe.age >= 1 && tribe.wood >= BUILDINGS.house.cost) {
       const hut = mine.find((b) => b.type === 'hut' && b.progress >= 1 && this.flatness(b.x, b.y, 2) <= BUILDINGS.house.flat + 0.05 && !this.buildings.some((o) => o !== b && dist(o.x, o.y, b.x, b.y) < BUILDINGS.house.radius + BUILDINGS[o.type].radius));
       if (hut) {
         hut.type = 'house'; hut.progress = 0; hut.upgrading = true; hut.hp = BUILDINGS.house.hp; tribe.wood -= BUILDINGS.house.cost; this.stampBlocked(hut, 1);
         return;
       }
     }
-    if (tribe.wood < BUILDINGS.hut.cost) return;
-    const anchor = tribe.standard && this.rng() < 0.5 ? tribe.standard : null;
-    const homes = mine.filter((b) => b.progress >= 1);
-    let found = null;
-    for (let i = 0; i < 44 && !found; i++) {
-      const from = anchor || homes[Math.floor(this.rng() * homes.length)]; if (!from) break;
-      const a = this.rng() * 6.28, r = (from.type === 'temple' ? 6.5 : 3.5) + this.rng() * 8.5;
+    // Needs in order. The first workshop of each kind outranks new homes, so an age's new crafts actually start.
+    const needs = [];
+    if (count('farm') < Math.min(6, Math.ceil((tribe.pop + 2) / 12)) && tribe.food < tribe.pop * 4 + 20) needs.push('farm');
+    if (tribe.age >= 1) for (const type of ['school', 'mine', 'forge']) if (!count(type)) needs.push(type);
+    if (needsHome) needs.push('hut');
+    if (tribe.age >= 1) {
+      if (count('school') && count('school') < 1 + Math.floor(tribe.pop / 26)) needs.push('school');
+      if (count('mine') && count('mine') < 1 + Math.floor(tribe.pop / 24)) needs.push('mine');
+      if (count('forge') && count('forge') < 1 + Math.floor(tribe.pop / 26)) needs.push('forge');
+    }
+    if (tribe.age >= 2 && count('tower') < Math.min(3, 1 + Math.floor(tribe.pop / 30))) needs.push('tower');
+    if (!needs.length) { tribe.noSiteSince = -1; return; }
+    for (const type of needs) {
+      const def = BUILDINGS[type];
+      if (tribe.wood < def.cost || tribe.metal < (def.metal || 0)) return; // Save up for the most urgent thing.
+      // A workshop the next age depends on must not stall it, so workers will clear trees and level rougher ground for it.
+      const found = this.findPlot(tribe, type) || (type !== 'hut' && (count(type) === 0 || ageProgress(this, tribe)?.items.some((i) => i.key === type && i.have < i.need)) ? this.findPlot(tribe, type, true) : null);
+      if (found) {
+        if (found.clear) for (let t = this.trees.length - 1; t >= 0; t--) if (dist(this.trees[t].x, this.trees[t].y, found.x, found.y) < def.radius) this.removeTree(t);
+        tribe.wood -= def.cost; tribe.metal -= def.metal || 0;
+        this.addBuilding(type, tribe.id, found.x, found.y, 0); tribe.noSiteSince = -1; tribe.stats.buildings++;
+        return;
+      }
+    }
+    if (tribe.noSiteSince < 0) tribe.noSiteSince = this.time;
+  }
+
+  findPlot(tribe, type, rough = false) {
+    const def = BUILDINGS[type], homes = this.buildings.filter((b) => b.tribe === tribe.id && b.progress >= 1);
+    const anchor = tribe.standard && type === 'hut' && this.rng() < 0.5 ? tribe.standard : null;
+    const reach = Math.ceil(def.radius - 0.4);
+    for (let i = 0; i < (type === 'hut' ? 44 : 90); i++) {
+      const from = anchor || homes[Math.floor(this.rng() * homes.length)]; if (!from) return null;
+      const a = this.rng() * 6.28, r = (from.type === 'temple' ? 6.5 : 3.5) + this.rng() * (rough ? 18 : type === 'hut' ? 8.5 : 13);
       const x = Math.round(from.x + Math.cos(a) * r), y = Math.round(from.y + Math.sin(a) * r);
       if (x < 3 || y < 3 || x > N - 4 || y > N - 4) continue;
-      if (!this.inInfluence(tribe.id, x, y) || this.heightAt(x, y) < this.sea + 0.3) continue;
-      if (!tribe.temple || !this.connected(x, y, tribe.temple.x + 5, tribe.temple.y)) { if (!this.connectedToTemple(tribe, x, y)) continue; }
-      if (this.flatness(x, y, 1) > BUILDINGS.hut.flat) continue;
-      if (this.buildings.some((b) => dist(b.x, b.y, x, y) < BUILDINGS[b.type].radius + 2)) continue;
-      if (this.trees.some((t) => dist(t.x, t.y, x, y) < 1.4)) continue;
-      found = { x, y };
+      if (!this.inInfluence(tribe.id, x, y) || this.heightAt(x, y) < this.sea + (type === 'mine' ? 0.7 : 0.3)) continue;
+      if (!this.connectedToTemple(tribe, x, y)) continue;
+      if (this.flatness(x, y, reach) > (rough ? 1.15 : def.flat)) continue;
+      if (this.buildings.some((b) => dist(b.x, b.y, x, y) < BUILDINGS[b.type].radius + def.radius + 0.6)) continue;
+      if (!rough && this.trees.some((t) => dist(t.x, t.y, x, y) < def.radius)) continue;
+      return { x, y, clear: rough };
     }
-    if (found) {
-      tribe.wood -= BUILDINGS.hut.cost; this.addBuilding('hut', tribe.id, found.x, found.y, 0); tribe.noSiteSince = -1; tribe.stats.buildings++;
-    } else if (tribe.noSiteSince < 0) tribe.noSiteSince = this.time;
+    return null;
   }
 
   connectedToTemple(tribe, x, y) {
@@ -548,9 +676,20 @@ export class World {
         if (!this.buildings.includes(b)) continue;
         if (this.tick % 15 === b.id % 15) for (const t of this.trees) if (dist(t.x, t.y, b.x, b.y) < BUILDINGS[b.type].radius + 2 && this.rng() < 0.35) t.burn = Math.max(t.burn, 4);
       }
+      if (b.type === 'tower' && b.progress >= 1) this.fireTower(b);
       if (b.type !== 'temple' && this.heightAt(b.x, b.y) < this.sea - 0.05) this.hurtBuilding(b, 60 * DT);
       else if (b.type === 'temple' && b.hp < BUILDINGS.temple.hp) b.hp = Math.min(BUILDINGS.temple.hp, b.hp + 2 * DT);
     }
+  }
+
+  // A watchtower looses arrows at any enemy in range.
+  fireTower(b) {
+    b.reload = (b.reload || 0) - DT; if (b.reload > 0) return;
+    let target = null, best = 9;
+    for (const p of this.people) { if (p.tribe === b.tribe || p.state === 'carried' || p.state === 'air') continue; const d = dist(p.x, p.y, b.x, b.y); if (d < best) { best = d; target = p; } }
+    if (!target) { b.reload = 0.5; return; }
+    b.reload = 1.3; this.events.push({ type: 'arrow', fromX: b.x, fromY: b.y, x: target.x, y: target.y, tribe: b.tribe });
+    this.hurt(target, 8 * AGES[this.tribes[b.tribe].age].gear, 'arrow');
   }
 
   updateTrees() {
@@ -616,7 +755,7 @@ export class World {
     if (p.state === 'air') return this.updateAirborne(p);
     p.moving = false;
     const tribe = this.tribes[p.tribe], ground = this.heightAt(p.x, p.y);
-    if (p.blessUntil > this.time && this.tick % 10 === 0) p.hp = Math.min(p.role === 'warrior' ? 46 : 22, p.hp + 1.5);
+    if (p.blessUntil > this.time && this.tick % 10 === 0) p.hp = Math.min(maxHp(p), p.hp + 1.5);
     if (p.scared > 0) p.scared -= DT;
     if (p.attack > 0) p.attack -= DT;
     if (ground < this.sea + 0.02) return this.swim(p);
@@ -666,18 +805,23 @@ export class World {
     if (p.job && p.job.type !== 'pray' && p.job.type !== 'flee') return;
     if (p.job && p.job.type === 'flee') p.job = null;
     if (p.carry > 0) { const home = this.nearestHome(p, tribe); if (home) { p.job = { type: 'deliver', building: home }; return; } p.carry = 0; }
-    // Building sites come first, then wood if the tribe is short, then prayer.
-    let site = null, siteD = Infinity;
-    for (const b of this.buildings) {
-      if (b.tribe !== tribe.id || b.progress >= 1 || b.builders >= 3) continue;
-      const d = dist(b.x, b.y, p.x, p.y); if (d < siteD && this.connectedBuilding(p, b)) { siteD = d; site = b; }
-    }
-    if (site) { site.builders++; p.job = { type: 'build', building: site }; p.path = null; return; }
-    const prayerShare = tribe.pop < 12 ? 0.35 : 0.5;
-    const civilians = tribe.pop - tribe.warriors;
-    if (tribe.wood < 40 && tribe.praying >= Math.floor(civilians * prayerShare) || tribe.wood < 8) {
+    // Everyone does their own job first. With nothing to do, they go and pray.
+    if (p.profession === 'builder') {
+      let site = null, siteD = Infinity;
+      for (const b of this.buildings) {
+        if (b.tribe !== tribe.id || b.progress >= 1 || this.workersAt(b, 'build') >= 3) continue;
+        const d = dist(b.x, b.y, p.x, p.y); if (d < siteD && this.connectedBuilding(p, b)) { siteD = d; site = b; }
+      }
+      if (site) { p.job = { type: 'build', building: site }; p.path = null; return; }
+    } else if (p.profession === 'woodcutter') {
       const tree = this.nearestTree(p, 40);
       if (tree) { p.job = { type: 'chop', tree }; p.path = null; return; }
+    } else if (p.profession === 'farmer' || p.profession === 'miner' || p.profession === 'smith' || p.profession === 'scribe') {
+      const type = { farmer: 'farm', miner: 'mine', smith: 'forge', scribe: 'school' }[p.profession];
+      if (p.profession !== 'smith' || tribe.ore >= 2) {
+        const place = this.workplace(p, type);
+        if (place) { p.job = { type: 'tend', building: place }; p.path = null; return; }
+      }
     }
     if (p.job && p.job.type === 'pray') { if (this.rng() < 0.97) return; }
     if (tribe.temple) {
@@ -687,6 +831,20 @@ export class World {
     }
     if (this.rng() < 0.3) { const a = this.rng() * 6.28; p.job = { type: 'wander', x: p.x + Math.cos(a) * 4, y: p.y + Math.sin(a) * 4 }; p.path = null; }
   }
+
+  workersAt(b, kind) { let n = 0; for (const o of this.people) if (o.job && o.job.type === kind && o.job.building === b) n++; return n; }
+
+  workplace(p, type) {
+    let best = null, bestD = Infinity;
+    for (const b of this.buildings) {
+      if (b.tribe !== p.tribe || b.type !== type || b.progress < 1 || this.workersAt(b, 'tend') >= BUILDINGS[type].workers) continue;
+      const d = dist(b.x, b.y, p.x, p.y); if (d < bestD && this.connectedBuilding(p, b)) { bestD = d; best = b; }
+    }
+    return best;
+  }
+
+  // How fast this person works, from their rank, their tribe's tools and any blessing.
+  workSpeed(p, tribe) { return RANK_SPEED[p.rank] * AGES[tribe.age].tool * (p.blessUntil > this.time ? 1.6 : 1); }
 
   connectedBuilding(p, b) { const r = BUILDINGS[b.type].radius + 1; return [[r, 0], [-r, 0], [0, r], [0, -r]].some(([x, y]) => this.connected(p.x, p.y, b.x + x, b.y + y)); }
 
@@ -711,7 +869,7 @@ export class World {
       if (this.approachBuilding(p, b)) {
         p.state = 'work'; p.heading = Math.atan2(b.x - p.x, b.y - p.y);
         const labor = BUILDINGS[b.type].labor;
-        b.progress = Math.min(1, b.progress + DT / labor * (p.blessUntil > this.time ? 1.6 : 1));
+        b.progress = Math.min(1, b.progress + DT / labor * this.workSpeed(p, tribe)); this.gainXp(p, DT);
         if (b.progress >= 1) { b.upgrading = false; b.builders = 0; this.influenceDirty = true; this.events.push({ type: 'built', x: b.x, y: b.y, tribe: b.tribe, building: b.type }); for (const o of this.people) if (o.job && o.job.building === b) o.job = null; }
       }
     } else if (job.type === 'chop') {
@@ -719,6 +877,7 @@ export class World {
       if (!this.trees.includes(t)) { p.job = null; p.think = 0; return; }
       if (this.moveTo(p, t.x, t.y, 0.9)) {
         p.state = 'work'; p.heading = Math.atan2(t.x - p.x, t.y - p.y); p.work += DT;
+        p.work += DT * (this.workSpeed(p, tribe) - 1); this.gainXp(p, DT);
         if (p.work > 2.4) {
           p.work = 0; t.wood--; p.carry = 2; this.events.push({ type: 'chop', x: t.x, y: t.y, tribe: p.tribe });
           if (t.wood <= 0) this.removeTree(this.trees.indexOf(t));
@@ -729,10 +888,28 @@ export class World {
       const b = job.building;
       if (!this.buildings.includes(b)) { p.job = null; p.think = 0; return; }
       if (this.approachBuilding(p, b)) { tribe.wood += p.carry; p.carry = 0; p.job = null; p.think = 0; }
+    } else if (job.type === 'tend') {
+      const b = job.building;
+      if (!this.buildings.includes(b) || b.progress < 1) { p.job = null; p.think = 0; return; }
+      if (this.approachBuilding(p, b)) {
+        p.state = 'work'; p.heading = Math.atan2(b.x - p.x, b.y - p.y); this.gainXp(p, DT);
+        const speed = this.workSpeed(p, tribe);
+        if (p.profession === 'scribe') tribe.lore += 0.13 * DT * speed;
+        else {
+          p.work += DT * speed;
+          if (p.profession === 'farmer' && p.work >= 5) { p.work = 0; tribe.food += tribe.fertileUntil > this.time ? 2.6 : 1.7; }
+          else if (p.profession === 'miner' && p.work >= 6) { p.work = 0; tribe.ore += 1; }
+          else if (p.profession === 'smith') {
+            if (tribe.ore < 2) { p.work = 0; p.job = null; p.think = 2; return; }
+            if (p.work >= 6) { p.work = 0; tribe.ore -= 2; tribe.metal += 1; tribe.metalMade += 1; }
+          }
+        }
+      }
     } else if (job.type === 'pray') {
       if (this.moveTo(p, job.x, job.y, 0.6)) {
         p.state = 'pray'; if (tribe.temple) p.heading = Math.atan2(tribe.temple.x - p.x, tribe.temple.y - p.y);
-        tribe.belief = Math.min(BELIEF_CAP, tribe.belief + 0.15 * DT * tribe.beliefMult);
+        tribe.belief = Math.min(BELIEF_CAP, tribe.belief + 0.15 * DT * tribe.beliefMult); tribe.lore += 0.028 * DT;
+        if (p.profession === 'priest') this.gainXp(p, DT);
       }
     } else if (job.type === 'flee' || job.type === 'wander') {
       if (this.moveTo(p, job.x, job.y, 1.2)) p.job = null;
@@ -766,13 +943,13 @@ export class World {
 
   actWarrior(p) {
     const job = p.job; if (!job) { p.state = 'idle'; return; }
-    const might = p.blessUntil > this.time ? 1.6 : 1;
+    const might = (p.blessUntil > this.time ? 1.6 : 1) * AGES[p.gear].gear * RANK_MIGHT[p.rank];
     if (job.type === 'fight') {
       const t = job.target;
       if (!this.people.includes(t) || t.state === 'carried' || t.state === 'air') { p.job = null; p.think = 0; return; }
-      if (this.moveTo(p, t.x, t.y, 0.75)) {
+      if (this.moveTo(p, t.x, t.y, 0.75) && dist(p.x, p.y, t.x, t.y) < 1.8) {
         p.state = 'fight'; p.heading = Math.atan2(t.x - p.x, t.y - p.y);
-        if (p.attack <= 0) { p.attack = 0.8; this.hurt(t, 7 * might, 'battle'); this.events.push({ type: 'hit', x: t.x, y: t.y }); }
+        if (p.attack <= 0) { p.attack = 0.8; this.gainXp(p, 1); this.hurt(t, 7 * might, 'battle'); this.events.push({ type: 'hit', x: t.x, y: t.y }); }
       }
     } else if (job.type === 'raze') {
       const b = job.building;
@@ -795,6 +972,8 @@ export class World {
   // Walks toward (x, y) along a cached path. Returns true when within reach.
   moveTo(p, x, y, reach) {
     if (dist(p.x, p.y, x, y) <= reach) { p.path = null; return true; }
+    const settled = p.settled;
+    if (settled && settled.version === this.navVersion && dist(settled.x, settled.y, x, y) < 0.5) return true;
     p.state = 'walk';
     const goalChanged = !p.pathGoal || dist(p.pathGoal.x, p.pathGoal.y, x, y) > 1.5;
     if (!p.path || goalChanged || (p.navVersion !== this.navVersion && !this.pathStillValid(p))) {
@@ -802,6 +981,8 @@ export class World {
       this.pathBudget--;
       p.path = this.findPath(p.x, p.y, x, y, reach); p.pathIndex = 0; p.pathGoal = { x, y }; p.navVersion = this.navVersion;
       if (!p.path) { p.job = null; p.think = 0.6 + this.rng(); p.state = 'idle'; return false; }
+      // Already at the closest reachable point. Without this, the person would search again on every step and use up the budget.
+      if (!p.path.length) { p.path = null; p.settled = { x, y, version: this.navVersion }; return true; }
     }
     const blessed = p.blessUntil > this.time;
     const speed = (p.role === 'warrior' ? 2.1 : 1.75) * (blessed ? 1.35 : 1);
@@ -812,7 +993,7 @@ export class World {
       p.x += dx / d * step; p.y += dy / d * step; p.heading = Math.atan2(dx, dy); step = 0;
     }
     p.moving = true;
-    if (p.pathIndex >= p.path.length) { p.path = null; return dist(p.x, p.y, x, y) <= reach + 0.9; }
+    if (p.pathIndex >= p.path.length) { p.path = null; return true; }
     return false;
   }
 
