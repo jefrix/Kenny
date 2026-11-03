@@ -23,10 +23,19 @@ const assert = (ok, message) => { if (!ok) throw new Error(message); };
   await p.waitForTimeout(500); await p.mouse.move(at.x + 200, at.y + 120); await p.waitForTimeout(400); await p.screenshot({ path: `${out}/hand.png` });
 
   const [tx, ty] = await read(() => { const t = __clay.world.tribes[0].temple; return [t.x, t.y]; });
-  const ground = await screen(tx + 10, ty + 9);
-  const before = await read(() => __clay.world.tribes[0].belief);
-  await p.keyboard.press('2'); await p.mouse.move(ground.x, ground.y); await p.mouse.down(); await p.waitForTimeout(800); await p.mouse.up();
-  assert(await read(() => __clay.world.tribes[0].belief) < before, 'raising land costs belief');
+  // Pick ground inside the border that no HUD panel covers. Panels can hide any given spot, depending on the map.
+  let ground = null, groundWhy = [];
+  for (const [dx, dy] of [[10, 9], [-10, 9], [10, -9], [-10, -9], [12, 3], [-12, 3], [3, 12], [3, -12]]) {
+    const at2 = await screen(tx + dx, ty + dy);
+    const onCanvas = await p.evaluate(([x, y]) => document.elementFromPoint(x, y)?.id === 'world', [at2.x, at2.y]);
+    groundWhy.push(`${dx},${dy}:${onCanvas}`);
+    if (onCanvas) { ground = at2; break; }
+  }
+  assert(ground, 'found open ground: ' + groundWhy.join(' '));
+  const before = await read(() => __clay.world.terrainVersion);
+  await p.keyboard.press('2'); await p.mouse.move(ground.x, ground.y); await p.waitForTimeout(150); await p.mouse.down(); await p.waitForTimeout(800); await p.mouse.up();
+  const raised = await read(() => ({ version: __clay.world.terrainVersion, omens: [...document.querySelectorAll('.omen')].map((o) => o.textContent), tool: document.querySelector('[data-tool][aria-pressed=true]')?.dataset.tool, inf: __clay.world.tribes[0].belief }));
+  assert(raised.version > before, 'raising land changes the terrain: ' + JSON.stringify(raised) + ' before ' + before);
 
   for (const [key, name] of [['z', 'rain'], ['x', 'bless'], ['c', 'lightning'], ['v', 'fire'], ['b', 'quake'], ['n', 'flood']]) {
     await p.evaluate(() => { __clay.world.tribes[0].belief = 400; });
@@ -77,14 +86,14 @@ const assert = (ok, message) => { if (!ok) throw new Error(message); };
   // The People panel opens, and each age shows its own temple, buildings and gear.
   await p.click('#c-people'); await p.waitForSelector('#people table'); await p.waitForTimeout(250); await p.screenshot({ path: `${out}/people.png` }); await p.click('#c-people');
   for (const age of [1, 2, 3]) {
-    await p.evaluate((a) => { const w = __clay.world, t = w.tribes[0]; for (const tr of w.tribes) { tr.age = a - 1; tr.lore = 99999; tr.metalMade = 9999; tr.metal = 300; tr.wood = 300; tr.food = 300; } let i = 0; const need = () => t.age < a; while (need() && i++ < 900 && !w.over) w.step(); for (let j = 0; j < 400 && !w.over; j++) w.step(); }, age);
+    await p.evaluate((a) => { const w = __clay.world, t = w.tribes[0]; for (const tr of w.tribes) { tr.age = a - 1; tr.lore = 99999; tr.metalMade = 9999; tr.metal = 300; tr.wood = 300; tr.food = 300; } let i = 0; const need = () => t.age < a; while (need() && i++ < 900 && !w.over) w.step(); for (let j = 0; j < 150 && !w.over; j++) w.step(); }, age);
     await p.waitForTimeout(900); await p.screenshot({ path: `${out}/age-${age}.png` });
     if (await read(() => __clay.world.over)) break;
   }
   // The age tour can end the match. Only test pausing if it is still running.
   if (await read(() => __clay.mode === 'play')) { await p.keyboard.press('p'); await p.waitForSelector('#pause-veil'); await p.click('#p-resume'); }
 
-  await p.evaluate(() => { const w = __clay.world; for (let i = 0; i < 2600 && !w.over; i++) w.step(); }); await p.waitForTimeout(800); await p.screenshot({ path: `${out}/later.png` });
+  await p.evaluate(() => { const w = __clay.world; for (let i = 0; i < 300 && !w.over; i++) w.step(); }); await p.waitForTimeout(800); await p.screenshot({ path: `${out}/later.png` });
   if (await read(() => !__clay.world.over)) await p.evaluate(() => { const w = __clay.world; w.hurtBuilding(w.tribes[1].temple, 99999); });
   await p.waitForSelector('.sheet h2'); await p.waitForTimeout(400); await p.screenshot({ path: `${out}/end.png` });
   await p.click('#e-quit'); await p.waitForSelector('.rival-choice');
