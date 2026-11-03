@@ -16,6 +16,7 @@ const ICONS = {
   lower: svg('<path d="M3 21c8 0 7 11 14 14s10-1 14-1 5-13 14-13v21H3z"/><path d="M22 2h5v7h5l-7 8-8-8h5z"/>'),
   level: svg('<path d="M3 27h42v15H3z"/><path d="M6 21l9-9h18l9 9zM22 3h4v9h-4z"/>'),
   standard: svg('<path d="M21 6h4v34h7v5H14v-5h7z"/><path d="M26 9h17l-5 7 5 8H26z"/><path d="M14 2c1 5 11 5 14 0-1 8-13 8-14 0z"/>'),
+  eyes: svg('<path fill-rule="evenodd" d="M13 8c6 0 9 7 9 16s-3 16-9 16-9-7-9-16 3-16 9-16zm2 11a5 5 0 1 0 0 10 5 5 0 0 0 0-10zM35 8c6 0 9 7 9 16s-3 16-9 16-9-7-9-16 3-16 9-16zm2 11a5 5 0 1 0 0 10 5 5 0 0 0 0-10z"/>'),
   rain: svg('<path d="M12 27C5 27 3 17 11 15c1-9 15-11 19-2 9-1 12 12 3 14z"/><path d="M13 31l-3 9h3l3-9zM23 31l-4 13h3l4-13zM33 31l-3 9h3l3-9z"/>'),
   bless: svg('<circle cx="24" cy="24" r="8"/><path d="M22 2h4l1 12h-6zM22 46h4l1-12h-6zM2 22v4l12 1v-6zM46 22v4l-12 1v-6zM7 10l3-3 9 9-4 4zM41 38l-3 3-9-9 4-4zM38 7l3 3-9 9-4-4zM10 41l-3-3 9-9 4 4z"/>'),
   lightning: svg('<path d="M29 2 9 28h12l-5 18 23-27H26z"/>'),
@@ -29,6 +30,7 @@ const TOOLS = [
   { id: 'lower', name: 'Lower land', key: '3', icon: 'lower', stroke: true, help: 'Hold to lower the land. Cut your people off, or drown the shore.' },
   { id: 'level', name: 'Level land', key: '4', icon: 'level', stroke: true, help: 'Hold to flatten toward where you first pressed. Flat ground gets built on, and very flat ground gets houses.' },
   { id: 'standard', name: 'Standard', key: '5', icon: 'standard', help: 'Plant it and warriors march there. Click it again to call them home. It also extends your reach.' },
+  { id: 'eyes', name: 'See through their eyes', key: '6', icon: 'eyes', help: 'Click anyone to see the world as they do. Drag to look around.' },
 ];
 const MIRACLE_KEYS = { rain: 'Z', bless: 'X', lightning: 'C', fire: 'V', quake: 'B', flood: 'N' };
 const STEPS = [
@@ -42,7 +44,7 @@ const STEPS = [
 
 let renderer, world, mode = 'menu', difficulty = 'jealous', speed = 1, paused = false, tool = 'hand', accumulator = 0, last = performance.now();
 let held = null, pointer = { x: 0, y: 0, inside: false, ground: null }, activePointers = new Map(), stroke = null, panning = null, trail = [], strokeTimer = 0, keys = new Set(), hover = null, uiTimer = 0, miniTimer = 0;
-let progress, stepIndex = 0, seed = 0, omens = [], lastTempleHp = 0, lastAttackOmen = -99, noFlatWarned = false, statsLine = '', uiRefs = {};
+let lookDrag = null, progress, stepIndex = 0, seed = 0, omens = [], lastTempleHp = 0, lastAttackOmen = -99, noFlatWarned = false, statsLine = '', uiRefs = {};
 
 const hudTemplate = () => `
   <section class="belief inlay edged" aria-label="Your people">
@@ -66,18 +68,20 @@ const hudTemplate = () => `
     <div class="bar" title="The rival temple" style="margin-top:0"><i id="foe-temple" style="background:var(--rival)"></i></div>
     <canvas id="minimap" width="${N}" height="${N}" role="button" aria-label="Map. Click to move the view."></canvas>
   </section>
+  <div class="watch-bar" id="watching" hidden><span id="watching-text"></span><button class="act" id="watch-exit">Return to god view</button></div>
   <div class="omens" id="omens" aria-live="polite"></div>
   <div id="prophecy-slot"></div>
   <div class="tray-wrap">
     <div class="inscription" id="inscription"></div>
     <div class="tray" role="toolbar" aria-label="Tools and miracles">
-      ${TOOLS.map((t) => `<button class="tool" data-tool="${t.id}" aria-pressed="false" aria-label="${t.name}" title="${t.name} (${t.key})"><span class="key">${t.key}</span>${ICONS[t.icon]}<span class="cost">${t.stroke ? 'Hold' : 'Free'}</span></button>`).join('')}
+      ${TOOLS.map((t) => `<button class="tool" data-tool="${t.id}" aria-pressed="false" aria-label="${t.name}" title="${t.name} (${t.key})"><span class="key">${t.key}</span>${ICONS[t.icon]}<span class="cost">${t.stroke ? 'Hold' : t.id === 'eyes' ? 'Look' : 'Free'}</span></button>`).join('')}
       <span class="gap"></span>
       ${Object.entries(MIRACLES).map(([id, m]) => `<button class="tool miracle" data-tool="${id}" aria-pressed="false" aria-label="${m.name}, costs ${m.cost} belief" title="${m.name} (${MIRACLE_KEYS[id]})"><span class="key">${MIRACLE_KEYS[id]}</span>${ICONS[id]}<span class="cost">${m.cost}</span><span class="cool"></span></button>`).join('')}
     </div>
   </div>`;
 
 function showTitle() {
+  if (renderer.watched) stopWatching();
   mode = 'menu'; document.body.classList.add('menu');
   paused = false; speed = 1; held = null; stroke = null; panning = null; tool = 'hand';
   const beaten = store.get('beaten', {});
@@ -105,8 +109,9 @@ function showHelp() {
       <dt>Land</dt><dd>Level ground for homes and raise bridges. You can only touch what lies inside your border.</dd>
       <dt>Standard</dt><dd>Warriors march to it. Warriors carry your border with them.</dd>
       <dt>Win</dt><dd>Destroy the rival temple, or leave them with no followers.</dd>
+      <dt>Eyes</dt><dd>Pick the eyes, then click anyone to see through their eyes. Drag to look around, and press Esc to return.</dd>
       <dt>View</dt><dd>Drag empty ground, or use WASD, to move. Right-drag or Q and E to turn. Wheel to zoom. On a touchscreen, use two fingers to turn and zoom.</dd>
-      <dt>Keys</dt><dd>1–5 for tools, Z X C V B N for miracles, P to pause, Esc to put down a tool.</dd>
+      <dt>Keys</dt><dd>1–6 for tools, Z X C V B N for miracles, P to pause, Esc to put down a tool.</dd>
     </dl>
     <div class="acts"><button class="act primary" id="h-close">Close</button></div></div>`;
   ui.appendChild(veil);
@@ -115,6 +120,7 @@ function showHelp() {
 }
 
 function startMatch(rival, keepSeed) {
+  if (renderer.watched) stopWatching();
   difficulty = rival; seed = keepSeed ?? Math.floor(Math.random() * 1e9);
   mode = 'play'; document.body.classList.remove('menu'); paused = false; speed = 1; tool = 'hand'; held = null; stroke = null; panning = null; omens = []; accumulator = 0; noFlatWarned = false; lastAttackOmen = -99;
   world = new World({ seed }); world.rivals.push(new RivalGod(FOE, rival));
@@ -122,13 +128,14 @@ function startMatch(rival, keepSeed) {
   progress = { grabs: 0, strokes: 0, rain: 0, raises: 0, standards: 0 }; stepIndex = store.get('tutorial', true) ? 0 : -1; lastTempleHp = world.tribes[ME].temple.hp;
   ui.innerHTML = hudTemplate();
   uiRefs = Object.fromEntries(['b-value', 'b-rate', 's-pop', 's-war', 's-wood', 'my-temple', 'foe-temple', 'f-line', 'omens', 'inscription', 'prophecy-slot', 'minimap', 'c-pause', 'c-speed', 'c-sound'].map((id) => [id, document.getElementById(id)]));
-  ui.querySelectorAll('[data-tool]').forEach((b) => b.addEventListener('click', () => { play('click'); selectTool(b.dataset.tool); canvas.focus({ preventScroll: true }); }));
+  ui.querySelectorAll('[data-tool]').forEach((b) => b.addEventListener('click', () => { play('click'); const leaving = renderer.watched && b.dataset.tool === 'eyes'; selectTool(leaving ? 'hand' : b.dataset.tool); canvas.focus({ preventScroll: true }); }));
+  document.getElementById('watch-exit').addEventListener('click', () => { play('click'); stopWatching(); canvas.focus({ preventScroll: true }); });
   ui.querySelectorAll('[data-tool]').forEach((b) => b.addEventListener('pointerenter', () => { uiRefs.inscription.textContent = describeTool(b.dataset.tool); }));
   ui.querySelector('.tray').addEventListener('pointerleave', () => { uiRefs.inscription.textContent = tool === 'hand' ? '' : describeTool(tool); });
   uiRefs['c-pause'].addEventListener('click', togglePause); uiRefs['c-speed'].addEventListener('click', () => { speed = speed === 1 ? 2 : speed === 2 ? 3 : 1; uiRefs['c-speed'].textContent = `${speed}×`; });
   uiRefs['c-sound'].addEventListener('click', toggleSound);
   const mini = uiRefs.minimap, jump = (e) => { const r = mini.getBoundingClientRect(); renderer.focus((e.clientX - r.left) / r.width * N, (e.clientY - r.top) / r.height * N); };
-  mini.addEventListener('pointerdown', (e) => { jump(e); mini.setPointerCapture(e.pointerId); }); mini.addEventListener('pointermove', (e) => { if (e.buttons) jump(e); });
+  mini.addEventListener('pointerdown', (e) => { stopWatching(); jump(e); mini.setPointerCapture(e.pointerId); }); mini.addEventListener('pointermove', (e) => { if (e.buttons) jump(e); });
   selectTool('hand'); renderProphecy(); updateHud(); drawMinimap();
 }
 
@@ -137,7 +144,32 @@ function describeTool(id) {
   const t = TOOLS.find((x) => x.id === id); return t ? `${t.name}. ${t.help}` : '';
 }
 
+function startWatching(person) {
+  selectTool('hand'); renderer.startWatching(person); document.body.classList.add('watching');
+  const bar = document.getElementById('watching'); bar.hidden = false; updateWatchingText();
+  ui.querySelector('[data-tool="eyes"]').setAttribute('aria-pressed', 'true');
+  ui.querySelector('[data-tool="hand"]').setAttribute('aria-pressed', 'false');
+}
+function stopWatching() {
+  if (!renderer.watched) return;
+  renderer.stopWatching(); document.body.classList.remove('watching'); lookDrag = null;
+  const bar = document.getElementById('watching'); if (bar) bar.hidden = true;
+  ui.querySelector('[data-tool="eyes"]')?.setAttribute('aria-pressed', 'false');
+  ui.querySelector(`[data-tool="${tool}"]`)?.setAttribute('aria-pressed', 'true');
+}
+const ACTIVITY = { walk: 'Walking', work: 'Working', pray: 'Praying', fight: 'Fighting', swim: 'Swimming for their life', carried: 'In the hand of a god', air: 'Flying through the air', idle: 'Standing around' };
+function updateWatchingText() {
+  const p = renderer.watched, el = document.getElementById('watching-text'); if (!p || !el) return;
+  const job = p.job?.type === 'chop' && p.state === 'walk' ? 'Off to cut wood' : p.job?.type === 'build' && p.state === 'walk' ? 'Off to build' : p.job?.type === 'flee' ? 'Running for the temple' : p.job?.type === 'march' && p.state === 'walk' ? 'Marching' : ACTIVITY[p.state] || 'Standing around';
+  el.textContent = `${p.tribe === ME ? 'Your' : 'Rival'} ${p.role}. ${job}.`;
+}
+function checkWatched() {
+  const p = renderer.watched; if (!p || world.people.includes(p)) return;
+  stopWatching(); omen(`The one you were watching has died.`, true);
+}
+
 function selectTool(id) {
+  stopWatching();
   tool = id;
   ui.querySelectorAll('[data-tool]').forEach((b) => b.setAttribute('aria-pressed', b.dataset.tool === id ? 'true' : 'false'));
   if (uiRefs.inscription) uiRefs.inscription.textContent = id === 'hand' ? '' : describeTool(id);
@@ -221,7 +253,7 @@ function watchOmens() {
 }
 
 function endMatch() {
-  mode = 'over'; const won = world.winner === ME, me = world.tribes[ME], d = DIFFICULTIES[difficulty], minutes = Math.floor(world.time / 60), seconds = String(Math.floor(world.time % 60)).padStart(2, '0');
+  stopWatching(); mode = 'over'; const won = world.winner === ME, me = world.tribes[ME], d = DIFFICULTIES[difficulty], minutes = Math.floor(world.time / 60), seconds = String(Math.floor(world.time % 60)).padStart(2, '0');
   play(won ? 'win' : 'lose');
   if (won) { const beaten = store.get('beaten', {}); beaten[difficulty] = true; store.set('beaten', beaten); }
   const order = Object.keys(DIFFICULTIES), next = order[order.indexOf(difficulty) + 1];
@@ -293,6 +325,7 @@ canvas.addEventListener('pointerdown', (e) => {
   if (mode !== 'play' || paused) return;
   initAudio(); activePointers.set(e.pointerId, e);
   refreshGround(e);
+  if (renderer.watched) { lookDrag = activePointers.size === 1 ? { x: e.clientX, y: e.clientY } : null; return; }
   if (activePointers.size > 1) { // A second finger means the camera, so drop whatever the first was doing.
     stroke = null; panning = null; if (held) releaseHeld(0, 0); return;
   }
@@ -315,6 +348,11 @@ canvas.addEventListener('pointerdown', (e) => {
     strokeTimer = 0;
     return;
   }
+  if (tool === 'eyes') {
+    const hit = renderer.pickEntity(e.clientX, e.clientY, true);
+    if (hit) { play('grab'); startWatching(hit.ref); } else deny('Click a person to see through their eyes.');
+    return;
+  }
   if (tool === 'standard') {
     if (!g) return;
     const current = world.tribes[ME].standard;
@@ -327,6 +365,10 @@ canvas.addEventListener('pointerdown', (e) => {
 });
 addEventListener('pointermove', (e) => {
   if (mode !== 'play') return;
+  if (renderer.watched) {
+    if (lookDrag) { renderer.lookBy(-(e.clientX - lookDrag.x) * 0.0045, -(e.clientY - lookDrag.y) * 0.0045); lookDrag.x = e.clientX; lookDrag.y = e.clientY; }
+    return;
+  }
   if (e.target !== canvas && !held && !stroke && !panning) { pointer.inside = false; return; }
   refreshGround(e);
   if (panning && activePointers.size <= 1) {
@@ -343,7 +385,7 @@ function releaseHeld(vx, vy) {
   held = null; trail = []; play('drop');
 }
 const pointerEnd = (e) => {
-  activePointers.delete(e.pointerId);
+  activePointers.delete(e.pointerId); lookDrag = null;
   if (mode !== 'play') return;
   if (pointer.rightStart && e.button === 2) { if (Math.hypot(e.clientX - pointer.rightStart.x, e.clientY - pointer.rightStart.y) < 6) selectTool('hand'); pointer.rightStart = null; }
   stroke = null; panning = null;
@@ -362,6 +404,7 @@ addEventListener('keydown', (e) => {
   keys.add(k);
   if (k === 'p' || (k === ' ' && !paused && e.target === canvas)) { e.preventDefault(); togglePause(); return; }
   if (k === 'm') return toggleSound();
+  if (k === 'escape' && renderer.watched && !paused) return stopWatching();
   if (k === 'escape') { if (paused && document.getElementById('pause-veil')) return togglePause(); if (tool !== 'hand') return selectTool('hand'); return togglePause(); }
   if (paused) return;
   const t = TOOLS.find((x) => x.key === k); if (t) return selectTool(t.id);
@@ -374,6 +417,12 @@ addEventListener('blur', () => keys.clear());
 
 function updateCameraKeys(dt) {
   if (mode !== 'play') return;
+  if (renderer.watched) {
+    const yaw = (keys.has('a') || keys.has('arrowleft') || keys.has('q') ? 1 : 0) - (keys.has('d') || keys.has('arrowright') || keys.has('e') ? 1 : 0);
+    const pitch = (keys.has('w') || keys.has('arrowup') ? 1 : 0) - (keys.has('s') || keys.has('arrowdown') ? 1 : 0);
+    if (yaw || pitch) renderer.lookBy(yaw * dt * 1.6, pitch * dt * 1.1);
+    return;
+  }
   const right = (keys.has('d') || keys.has('arrowright') ? 1 : 0) - (keys.has('a') || keys.has('arrowleft') ? 1 : 0);
   const forward = (keys.has('w') || keys.has('arrowup') ? 1 : 0) - (keys.has('s') || keys.has('arrowdown') ? 1 : 0);
   if (right || forward) renderer.panScreen(right * dt * 38, forward * dt * 38);
@@ -390,7 +439,14 @@ function applyStroke(dt) {
 
 function updateCursor() {
   if (mode !== 'play') return;
+  if (renderer.watched) return;
   const g = pointer.ground;
+  if (tool === 'eyes') {
+    hover = pointer.inside ? renderer.pickEntity(pointer.x, pointer.y, true) : null;
+    renderer.setHand(0, 0, false, false);
+    if (hover) renderer.setCursor(hover.ref.x, hover.ref.y, 0.65, true); else renderer.setCursor(0, 0, 0);
+    return;
+  }
   const showHand = (tool === 'hand' || held) && pointer.inside && (g || held);
   if (g || !held) renderer.setHand(g ? g.x : renderer.hand.x, g ? g.y : renderer.hand.y, !!showHand, !!held);
   if (!pointer.inside || !g) { renderer.setCursor(0, 0, 0); hover = null; return; }
@@ -416,7 +472,8 @@ function loop(now) {
   handleEvents(mode === 'play');
   if (mode === 'play') {
     updateCameraKeys(dt); applyStroke(dt); updateCursor();
-    uiTimer -= dt; if (uiTimer <= 0) { uiTimer = 0.2; updateHud(); watchOmens(); advanceProphecy(); tickOmens(now); }
+    checkWatched();
+    uiTimer -= dt; if (uiTimer <= 0) { uiTimer = 0.2; updateHud(); updateWatchingText(); watchOmens(); advanceProphecy(); tickOmens(now); }
     miniTimer -= dt; if (miniTimer <= 0) { miniTimer = 0.75; drawMinimap(); }
     if (world.over) { handleEvents(true); endMatch(); }
   }

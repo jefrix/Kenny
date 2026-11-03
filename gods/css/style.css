@@ -76,6 +76,14 @@ a { color: var(--shell); }
 .tool .cool { position: absolute; left: 0; right: 0; bottom: 0; background: rgba(21,17,13,.72); height: calc(var(--cool, 0) * 100%); pointer-events: none; }
 .gap { flex: 0 0 7px; }
 
+/* ----- Seeing through someone's eyes ----- */
+body.watching #world { cursor: grab; }
+body.watching #world:active { cursor: grabbing; }
+body.watching .prophecy { display: none; }
+.watch-bar { position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(max(8px, env(safe-area-inset-bottom)) + 124px); display: flex; align-items: center; gap: 12px; padding: 6px 7px 6px 14px; background: rgba(21,17,13,.86); font-size: 18px; white-space: nowrap; }
+.watch-bar[hidden] { display: none; }
+.watch-bar .act { padding: 6px 12px; font-size: 16px; }
+
 /* ----- Prophecy steps and omens ----- */
 .prophecy { position: absolute; top: 172px; left: 10px; width: 218px; padding: 13px 13px 10px; }
 .prophecy h3 { margin: 0 0 4px; font: 400 16px/1.15 var(--display); color: var(--gold); }
@@ -114,6 +122,8 @@ a { color: var(--shell); }
   .prophecy p { font-size: 15px; }
   .omens { top: 200px; width: 80vw; } .omen { font-size: 16px; }
   .tool { width: 56px; height: 62px; grid-template-rows: 32px auto; } .tool svg { width: 30px; height: 30px; } .tool .key { display: none; }
+  .watch-bar { bottom: calc(max(8px, env(safe-area-inset-bottom)) + 74px); font-size: 15px; gap: 8px; padding-left: 9px; }
+  body.watching .controls { display: none; }
   .tray-wrap { justify-items: stretch; } .inscription { justify-self: center; font-size: 15px; }
   .sheet { padding: 19px 16px 15px; }
 }

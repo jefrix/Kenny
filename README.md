@@ -55,6 +55,7 @@ You never give orders. Your followers build, gather, pray and fight on their own
 - **Land.** Raise, lower or level ground inside your border. People build only on flat land, and very flat land lets huts grow into houses. A strait separates the two tribes, so someone has to raise a bridge.
 - **The Hand.** Grab people, rocks and trees, then set them down or throw them. Set a rival villager down at your temple to convert them.
 - **Standard.** Warriors march to it, and carry your border with them. That is how you get close enough to shape or strike enemy land.
+- **Eyes.** Pick the eyes, then click anyone to see the world from where they stand. Drag to look around.
 - **Miracles.** Rain, Bless, Lightning, Firestorm, Earthquake and Flood.
 - **Winning.** Destroy the rival temple, or leave the rival with no followers. Rivals use the same actions and rules as you; the hardest also gets extra prayer.
 

@@ -194,6 +194,7 @@ export class GodRenderer {
   // ----- World binding -----
 
   setWorld(world, focusTribe = 0) {
+    this.stopWatching();
     this.world = world; this.rubble = [];
     if (this.terrain) { this.scene.remove(this.terrain); this.terrain.geometry.dispose(); }
     const geometry = new THREE.BufferGeometry(), count = N * N;
@@ -292,7 +293,7 @@ export class GodRenderer {
   }
 
   // Finds what the Hand would grab. People win over rocks, rocks win over trees.
-  pickEntity(clientX, clientY) {
+  pickEntity(clientX, clientY, peopleOnly = false) {
     const w = this.world; let best = null, bestScore = Infinity;
     const consider = (kind, e, height, reach, rank) => {
       const s = this.screenOf(e.x, height, e.y); if (s.behind) return;
@@ -300,6 +301,7 @@ export class GodRenderer {
       const score = d + rank; if (score < bestScore) { bestScore = score; best = { kind, id: e.id, ref: e }; }
     };
     for (const p of w.people) if (p.state !== 'carried' && p.state !== 'air') consider('person', p, w.heightAt(p.x, p.y) + 0.45, 30, 0);
+    if (peopleOnly) return best;
     for (const r of w.rocks) consider('rock', r, w.heightAt(r.x, r.y) + 0.4, 26, 18);
     for (const t of w.trees) if (t.growth > 0.6) consider('tree', t, w.heightAt(t.x, t.y) + 1, 24, 36);
     return best;
@@ -360,6 +362,54 @@ export class GodRenderer {
   focus(x, y) { this.panBy(x - this.controls.target.x, y - this.controls.target.z); }
   rotate(angle) {
     const c = this.controls, off = this.camera.position.clone().sub(c.target); off.applyAxisAngle(new THREE.Vector3(0, 1, 0), angle); this.camera.position.copy(c.target).add(off);
+  }
+
+  // ----- Seeing through one person's eyes -----
+
+  startWatching(person) {
+    if (this.watched) { this.watched = person; this.resetLook(person); return; }
+    this.watched = person; this.resetLook(person);
+    this.savedView = { position: this.camera.position.clone(), target: this.controls.target.clone() };
+    this.controls.enabled = false; this.camera.rotation.order = 'YXZ'; this.camera.fov = 68; this.camera.near = 0.1; this.camera.updateProjectionMatrix();
+    this.setCursor(0, 0, 0); this.setHand(0, 0, false, false);
+  }
+
+  resetLook(person) { this.watch = { heading: person.heading, yaw: 0, pitch: 0, lastDrag: -99, y: null }; }
+
+  stopWatching() {
+    if (!this.watched) return;
+    this.watched = null; this.camera.rotation.order = 'XYZ'; this.camera.fov = 42; this.camera.near = 0.5; this.camera.updateProjectionMatrix();
+    this.camera.position.copy(this.savedView.position); this.controls.target.copy(this.savedView.target); this.controls.enabled = true; this.controls.update();
+  }
+
+  lookBy(yaw, pitch) {
+    const w = this.watch; if (!w) return;
+    w.yaw += yaw; w.pitch = Math.max(-1.25, Math.min(1.25, w.pitch + pitch)); w.lastDrag = this.time;
+  }
+
+  updateWatchedCamera(dt) {
+    const p = this.watched, w = this.world, look = this.watch, s = this.positions.get(p) || p;
+    let x = s.x, z = s.y, y, nod = 0;
+    const phase = this.time * 10 + p.seed, ground = Math.max(w.heightAt(x, z), w.sea);
+    if (p.state === 'carried' && this.handTip) { x = this.handTip.x; z = this.handTip.z; y = this.handTip.y; }
+    else if (p.state === 'air') { x = p.x; z = p.y; y = p.z + 0.9; }
+    else if (p.state === 'swim') y = w.sea + 0.28;
+    else {
+      y = w.heightAt(x, z) + (p.role === 'warrior' ? 0.98 : 1.04);
+      if (p.moving && this.motionOk) y += Math.abs(Math.sin(phase)) * 0.05;
+      // Praying people bow, and workers and fighters look at what is in front of them.
+      if (p.state === 'pray') { const bow = 0.5 + Math.sin(this.time * 1.7 + p.seed) * 0.42; y -= bow * 0.28; nod = bow * 0.55; }
+      else if (p.state === 'work' || p.state === 'fight') nod = 0.16;
+    }
+    y = Math.max(y, ground + 0.25);
+    // Follow turns slowly. People turn sharply on their paths, and a rigid camera would be hard to watch.
+    let turn = p.heading - look.heading; while (turn > Math.PI) turn -= Math.PI * 2; while (turn < -Math.PI) turn += Math.PI * 2;
+    look.heading += turn * Math.min(1, dt * 2.8);
+    // After you stop looking around, the gaze settles back to where the person is facing.
+    if (this.time - look.lastDrag > 2.5) { const ease = Math.min(1, dt * 1.1); look.yaw -= look.yaw * ease; look.pitch -= look.pitch * ease; }
+    look.y = look.y === null ? y : look.y + (y - look.y) * Math.min(1, dt * 12);
+    this.camera.position.set(x, look.y, z);
+    this.camera.rotation.set(look.pitch - nod - 0.04, look.heading + Math.PI + look.yaw, 0);
   }
 
   // ----- Events become effects -----
@@ -479,6 +529,7 @@ export class GodRenderer {
       let s = this.positions.get(p); if (!s) { s = { x: p.x, y: p.y, heading: p.heading }; this.positions.set(p, s); }
       const k = Math.min(1, dt * 12); s.x += (p.x - s.x) * k; s.y += (p.y - s.y) * k;
       let dh = p.heading - s.heading; while (dh > Math.PI) dh -= Math.PI * 2; while (dh < -Math.PI) dh += Math.PI * 2; s.heading += dh * Math.min(1, dt * 9);
+      if (p === this.watched) continue; // You cannot see your own head from the inside.
       const batch = p.role === 'warrior' ? b.warrior : b.villager, team = TEAM[p.tribe], phase = t * 10 + p.seed;
       if (p.state === 'carried') { const tip = this.handTip; if (tip) { s.x = tip.x; s.y = tip.z; batch.add(tip.x, tip.y - 0.9, tip.z, t * 1.4, 1.7, 1.7, Math.sin(t * 5) * 0.3, Math.cos(t * 4) * 0.3, null, team); } continue; }
       if (p.state === 'air') { s.x = p.x; s.y = p.y; batch.add(p.x, p.z, p.y, t * 9 + p.seed, 1.7, 1.7, t * 7, t * 5, null, team); continue; }
@@ -501,7 +552,7 @@ export class GodRenderer {
     // Lightning and impacts light the whole scene for a moment.
     this.flash = Math.max(0, this.flash - dt * 2.8);
     this.hemi.intensity = 1.25 + this.flash * 1.6; this.sun.intensity = 2.7 + this.flash * 1.4;
-    this.controls.update();
+    if (this.watched) this.updateWatchedCamera(dt); else this.controls.update();
     this.shake = Math.max(0, this.shake - dt * 1.3);
     const offset = this.motionOk && this.shake > 0 ? this.shake * 0.35 : 0, ox = (rnd() - 0.5) * offset, oy = (rnd() - 0.5) * offset, oz = (rnd() - 0.5) * offset;
     this.camera.position.x += ox; this.camera.position.y += oy; this.camera.position.z += oz;
