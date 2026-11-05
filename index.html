@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Kenny</title>
-<meta name="description" content="Kenny. Home of Robot Arena, where you program robots that fight on their own, and Clay &amp; Thunder, a god game.">
+<meta name="description" content="Kenny. Home of Robot Arena, where you program robots that fight on their own, Clay &amp; Thunder, a god game, and B-17 Tailgunner.">
 <link rel="stylesheet" href="arena/fonts/fonts.css">
 <script type="importmap">{ "imports": { "three": "./arena/vendor/three.module.min.js", "three/addons/OrbitControls.js": "./arena/vendor/OrbitControls.js" } }</script>
 <style>
@@ -27,6 +27,8 @@
   .launch-item { display: grid; gap: 14px; justify-items: center; width: min(430px, 92vw); align-content: start; }
   .launch.gods { background: var(--yellow); color: var(--ink); }
   .launch.gods:hover { background: #ffd64d; }
+  .launch.b17 { background: #4a5a36; }
+  .launch.b17:hover { background: #5a6c42; }
   .go p { margin: 0; font-size: clamp(17px, 2.2vw, 21px); }
 </style>
 </head>
@@ -38,6 +40,7 @@
     <div class="launches">
       <div class="launch-item"><a class="launch" href="arena/index.html">Launch Robot Arena</a><p>Build a robot. Program it with blocks. Watch it fight on its own.</p></div>
       <div class="launch-item"><a class="launch gods" href="gods/index.html">Play Clay &amp; Thunder</a><p>Move the land. Earn belief. Bring down the rival god.</p></div>
+      <div class="launch-item"><a class="launch b17" href="https://jefrix.github.io/B17/">Fly B-17 Tailgunner</a><p>Man the guns of a Flying Fortress. Fight your way to the target and home again.</p></div>
     </div>
   </div>
 </main>
